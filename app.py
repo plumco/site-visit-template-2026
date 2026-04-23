@@ -52,8 +52,20 @@ def load_data():
         if not raw_data or len(raw_data) < 2:
             continue
             
-        # BULLETPROOF FIX 1: Force all column headers to be strings (prevents blank header crashes)
-        headers = [str(h).strip() for h in raw_data[0]] 
+        # BULLETPROOF FIX 1: Extract headers
+        raw_headers = [str(h).strip() for h in raw_data[0]] 
+        
+        # BULLETPROOF FIX 1.5: Fix Duplicate Columns instantly
+        seen = {}
+        headers = []
+        for h in raw_headers:
+            if h in seen:
+                seen[h] += 1
+                headers.append(f"{h}_{seen[h]}")
+            else:
+                seen[h] = 0
+                headers.append(h)
+                
         df = pd.DataFrame(raw_data[1:], columns=headers)
         
         # Grab Master Sheet
@@ -169,7 +181,7 @@ with tab_visits:
         st.subheader("Visit Records")
         display_cols = [c for c in ['Source Sheet', 'Visit ID', 'Site Name', 'Tower Name', 'FloorsVisited', 'Associate ID', 'Date of Visit', 'Status', 'Report Submitted Date', 'Comment'] if c in filtered_v.columns]
         
-        # BULLETPROOF FIX 2: Force data to string format before displaying to prevent Arrow errors
+        # BULLETPROOF FIX 2: Prevent Arrow mixed type crashes
         st.dataframe(filtered_v[display_cols].astype(str), use_container_width=True)
 
 
@@ -258,5 +270,5 @@ with tab_master:
 
         st.subheader("Master Projects Directory")
         
-        # BULLETPROOF FIX 3: Force master data to string format to prevent Arrow crashes
+        # BULLETPROOF FIX 3: Prevent Arrow crashes
         st.dataframe(filtered_m.astype(str), use_container_width=True)
