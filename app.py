@@ -7,7 +7,6 @@ from google.oauth2.service_account import Credentials
 # --- 1. Page Config & CSS ---
 st.set_page_config(layout="wide", page_title="Site Visit Deep Analytics", page_icon="📊")
 
-# Custom CSS to make KPIs look like our HTML infographic cards
 st.markdown("""
 <style>
     div[data-testid="metric-container"] {
@@ -21,14 +20,12 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- 2. Google Sheets Connection ---
-# This caches the connection so it doesn't reconnect on every click
 @st.cache_resource
 def init_connection():
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
     ]
-    # Connect using Streamlit Secrets
     creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scopes)
     return gspread.authorize(creds)
 
@@ -36,7 +33,6 @@ client = init_connection()
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1J1K31wLOepJMO6DPHySUGR43GpV2sV7PqSHetO_EFjo/edit?gid=502709304#gid=502709304" 
 
 # --- 3. Load Data from Google Sheets ---
-# This caches the data for 5 minutes so it's fast, but stays live
 @st.cache_data(ttl=300) 
 def load_data():
     try:
@@ -52,9 +48,17 @@ def load_data():
     for ws in worksheets:
         title = ws.title.lower()
         
+        # BULLETPROOF DATA LOADING: Bypasses gspread's strict header rules
+        raw_data = ws.get_all_values()
+        if not raw_data or len(raw_data) < 2:
+            continue # Skip empty sheets
+            
+        headers = raw_data[0]
+        df = pd.DataFrame(raw_data[1:], columns=headers)
+        
         # Grab Master Sheet
         if 'master' in title:
-            master_df = pd.DataFrame(ws.get_all_records())
+            master_df = df
             continue
             
         # Skip Config Sheets
@@ -62,7 +66,6 @@ def load_data():
             continue
             
         # Process Visit Logs
-        df = pd.DataFrame(ws.get_all_records())
         if not df.empty and ('Site Name' in df.columns or 'Visit ID' in df.columns):
             df['Source Sheet'] = ws.title
             visit_dataframes.append(df)
@@ -95,12 +98,10 @@ with tab_visits:
     if visits_df.empty:
         st.warning("No Visit Log data found.")
     else:
-        # Pre-process Data for Filtering
         visits_df['Status'] = visits_df.apply(get_visit_status, axis=1)
         visits_df['Month'] = pd.to_datetime(visits_df['Date of Visit'], errors='coerce').dt.strftime('%b %Y')
         visits_df['Month'].fillna('Unknown', inplace=True)
 
-        # Filters
         st.subheader("Data Filters")
         col1, col2, col3, col4, col5 = st.columns(5)
         
@@ -120,7 +121,6 @@ with tab_visits:
             sites = ['All'] + list(visits_df['Site Name'].astype(str).unique())
             f_site = st.selectbox("Site Name", sites)
 
-        # Apply Filters
         filtered_v = visits_df.copy()
         if f_source != 'All': filtered_v = filtered_v[filtered_v['Source Sheet'] == f_source]
         if f_month != 'All': filtered_v = filtered_v[filtered_v['Month'] == f_month]
@@ -128,13 +128,11 @@ with tab_visits:
         if f_assoc != 'All': filtered_v = filtered_v[filtered_v['Associate ID'].astype(str) == f_assoc]
         if f_site != 'All': filtered_v = filtered_v[filtered_v['Site Name'].astype(str) == f_site]
 
-        # Calculate KPIs
         total_visits = len(filtered_v)
         pending = len(filtered_v[filtered_v['Status'] == 'Pending'])
         submitted = len(filtered_v[filtered_v['Status'] == 'Submitted'])
         tech_na = len(filtered_v[filtered_v['Status'] == 'Technical (NA)'])
         
-        # Calculate Submitted Floors safely
         submitted_df = filtered_v[filtered_v['Status'] == 'Submitted']
         total_floors = 0
         for val in submitted_df.get('FloorsVisited', submitted_df.get('Floors Visited', [])):
@@ -143,7 +141,6 @@ with tab_visits:
             except:
                 total_floors += 1 if str(val).strip() else 0
 
-        # KPI Metrics Row
         kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
         kpi1.metric("Total Visits", total_visits)
         kpi2.metric("Pending Reports", pending)
@@ -153,7 +150,6 @@ with tab_visits:
 
         st.markdown("---")
 
-        # Charts Row
         chart_col1, chart_col2 = st.columns(2)
         with chart_col1:
             st.markdown("##### Visits Per Month")
@@ -170,7 +166,6 @@ with tab_visits:
                           color_discrete_sequence=['#6366f1', '#14b8a6', '#f59e0b', '#f43f5e', '#8b5cf6', '#0ea5e9'])
             st.plotly_chart(fig2, use_container_width=True)
 
-        # Table
         st.subheader("Visit Records")
         display_cols = [c for c in ['Source Sheet', 'Visit ID', 'Site Name', 'Tower Name', 'FloorsVisited', 'Associate ID', 'Date of Visit', 'Status', 'Report Submitted Date', 'Comment'] if c in filtered_v.columns]
         st.dataframe(filtered_v[display_cols], use_container_width=True)
@@ -183,7 +178,6 @@ with tab_master:
     if master_df.empty:
         st.warning("No Master Project data found.")
     else:
-        # Standardize Columns safely
         def safe_col(options):
             for o in options:
                 if o in master_df.columns: return o
@@ -197,7 +191,6 @@ with tab_master:
         col_distr = safe_col(['Distributer', 'DISTRIBUTOR NANE', 'DISTRIBUTOR', 'Distributor'])
         col_ong = safe_col(['VISIT ONGOING', 'Visit Ongoing'])
 
-        # Filters
         st.subheader("Master Filters")
         m_c1, m_c2, m_c3, m_c4, m_c5, m_c6 = st.columns(6)
         
@@ -227,12 +220,10 @@ with tab_master:
             f_distr = m_c6.selectbox("Distributor", ['All'] + list(filtered_m[col_distr].astype(str).unique()))
             if f_distr != 'All': filtered_m = filtered_m[filtered_m[col_distr].astype(str) == f_distr]
 
-        # Master KPIs
         total_proj = len(filtered_m)
         active_proj = len(filtered_m[filtered_m[col_ong].astype(str).str.lower().isin(['yes', 'y', 'ongoing'])]) if col_ong else 0
         unique_states = filtered_m[col_state].nunique() if col_state else 0
         
-        # Count unique personnel
         teams_set = set()
         if col_tech: teams_set.update(filtered_m[col_tech].dropna().astype(str).tolist())
         if col_sale: teams_set.update(filtered_m[col_sale].dropna().astype(str).tolist())
@@ -241,11 +232,10 @@ with tab_master:
         k1.metric("Total Projects", total_proj)
         k2.metric("Active Visits (Ongoing)", active_proj)
         k3.metric("States Covered", unique_states)
-        k4.metric("Tech / Sales Teams", len([x for x in teams_set if x.strip() and x.lower() != 'nan']))
+        k4.metric("Tech / Sales Teams", len([x for x in teams_set if x.strip() and x.lower() not in ['nan', 'none', '']]))
 
         st.markdown("---")
 
-        # Charts Row
         m_chart1, m_chart2 = st.columns(2)
         with m_chart1:
             st.markdown("##### Projects by State")
@@ -264,6 +254,5 @@ with tab_master:
                              color_discrete_sequence=['#6366f1', '#14b8a6', '#f59e0b', '#f43f5e'])
                 st.plotly_chart(fig4, use_container_width=True)
 
-        # Table
         st.subheader("Master Projects Directory")
         st.dataframe(filtered_m, use_container_width=True)
