@@ -48,12 +48,12 @@ def load_data():
     for ws in worksheets:
         title = ws.title.lower()
         
-        # BULLETPROOF DATA LOADING: Bypasses gspread's strict header rules
         raw_data = ws.get_all_values()
         if not raw_data or len(raw_data) < 2:
-            continue # Skip empty sheets
+            continue
             
-        headers = raw_data[0]
+        # BULLETPROOF FIX 1: Force all column headers to be strings (prevents blank header crashes)
+        headers = [str(h).strip() for h in raw_data[0]] 
         df = pd.DataFrame(raw_data[1:], columns=headers)
         
         # Grab Master Sheet
@@ -106,13 +106,13 @@ with tab_visits:
         col1, col2, col3, col4, col5 = st.columns(5)
         
         with col1:
-            sources = ['All'] + list(visits_df['Source Sheet'].unique())
+            sources = ['All'] + list(visits_df['Source Sheet'].astype(str).unique())
             f_source = st.selectbox("Source Sheet", sources)
         with col2:
-            months = ['All'] + list(visits_df['Month'].unique())
+            months = ['All'] + list(visits_df['Month'].astype(str).unique())
             f_month = st.selectbox("Month", months)
         with col3:
-            statuses = ['All'] + list(visits_df['Status'].unique())
+            statuses = ['All'] + list(visits_df['Status'].astype(str).unique())
             f_status = st.selectbox("Status", statuses)
         with col4:
             associates = ['All'] + list(visits_df['Associate ID'].astype(str).unique())
@@ -122,9 +122,9 @@ with tab_visits:
             f_site = st.selectbox("Site Name", sites)
 
         filtered_v = visits_df.copy()
-        if f_source != 'All': filtered_v = filtered_v[filtered_v['Source Sheet'] == f_source]
-        if f_month != 'All': filtered_v = filtered_v[filtered_v['Month'] == f_month]
-        if f_status != 'All': filtered_v = filtered_v[filtered_v['Status'] == f_status]
+        if f_source != 'All': filtered_v = filtered_v[filtered_v['Source Sheet'].astype(str) == f_source]
+        if f_month != 'All': filtered_v = filtered_v[filtered_v['Month'].astype(str) == f_month]
+        if f_status != 'All': filtered_v = filtered_v[filtered_v['Status'].astype(str) == f_status]
         if f_assoc != 'All': filtered_v = filtered_v[filtered_v['Associate ID'].astype(str) == f_assoc]
         if f_site != 'All': filtered_v = filtered_v[filtered_v['Site Name'].astype(str) == f_site]
 
@@ -168,7 +168,9 @@ with tab_visits:
 
         st.subheader("Visit Records")
         display_cols = [c for c in ['Source Sheet', 'Visit ID', 'Site Name', 'Tower Name', 'FloorsVisited', 'Associate ID', 'Date of Visit', 'Status', 'Report Submitted Date', 'Comment'] if c in filtered_v.columns]
-        st.dataframe(filtered_v[display_cols], use_container_width=True)
+        
+        # BULLETPROOF FIX 2: Force data to string format before displaying to prevent Arrow errors
+        st.dataframe(filtered_v[display_cols].astype(str), use_container_width=True)
 
 
 # ==========================================
@@ -255,4 +257,6 @@ with tab_master:
                 st.plotly_chart(fig4, use_container_width=True)
 
         st.subheader("Master Projects Directory")
-        st.dataframe(filtered_m, use_container_width=True)
+        
+        # BULLETPROOF FIX 3: Force master data to string format to prevent Arrow crashes
+        st.dataframe(filtered_m.astype(str), use_container_width=True)
