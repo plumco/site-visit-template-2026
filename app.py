@@ -28,12 +28,12 @@ def init_connection():
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
     ]
-    # Make sure credentials.json is in the same folder as this script
+    # Connect using Streamlit Secrets
     creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scopes)
     return gspread.authorize(creds)
 
 client = init_connection()
-SHEET_URL = "https://docs.google.com/spreadsheets/d/1J1K31wLOepJMO6DPHySUGR43GpV2sV7PqSHetO_EFjo/edit?gid=502709304#gid=502709304" # <--- REPLACE THIS WITH YOUR GOOGLE SHEET LINK
+SHEET_URL = "https://docs.google.com/spreadsheets/d/1J1K31wLOepJMO6DPHySUGR43GpV2sV7PqSHetO_EFjo/edit?gid=502709304#gid=502709304" 
 
 # --- 3. Load Data from Google Sheets ---
 # This caches the data for 5 minutes so it's fast, but stays live
