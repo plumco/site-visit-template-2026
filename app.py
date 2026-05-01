@@ -93,16 +93,19 @@ def get_visit_status(row):
 
 def parse_floor(val):
     """
-    If the value is a number, return the number.
-    If the value is a name/text (can't be converted to number), consider it as 1.
+    Core Logic: If it's a number, return the number. 
+    If it's any text/name, consider it as 1. 
+    If it's completely empty, consider it as 0.
     """
     val_str = str(val).strip()
-    if not val_str or val_str.lower() in ['nan', 'none']:
+    if not val_str or val_str.lower() in ['nan', 'none', 'null', 'n/a', '-']:
         return 0
     try:
+        # Try to convert to float first (in case of '2.0'), then integer
         return int(float(val_str))
     except ValueError:
-        # If it throws an error (because it's a name or text), count it as 1
+        # If it hits an error, it means it is text (e.g., "John Doe", "Ground Floor")
+        # Rule: If there is any text, consider it as 1
         return 1
 
 # --- 5. UI Setup ---
@@ -155,7 +158,7 @@ with tab_visits:
         
         submitted_df = filtered_v[filtered_v['Status'] == 'Submitted']
         
-        # Calculate floors using the new parse_floor logic (Count names as 1)
+        # Apply strict text=1 logic for Top KPI Floors
         floors_col_t1 = 'FloorsVisited' if 'FloorsVisited' in submitted_df.columns else 'Floors Visited'
         total_floors = sum(parse_floor(val) for val in submitted_df.get(floors_col_t1, []))
 
@@ -339,8 +342,10 @@ with tab_exec:
                 # 5. Report Pending (From Status calculation)
                 report_pending = len(group[group['Status'] == 'Pending'])
                 
-                # 6. Report sent to the client (Is report visit? YES and sum FloorsVisited)
-                client_sent_floors = group[group['Clean_Report_Mark'].isin(['YES', 'Y', 'TRUE'])]['Num_Floors'].sum()
+                # 6. Report sent to the client 
+                # (Filter to YES reports only, then sum the strictly parsed Floors)
+                yes_reports = group[group['Clean_Report_Mark'].isin(['YES', 'Y', 'TRUE'])]
+                client_sent_floors = yes_reports['Num_Floors'].sum()
                 
                 # Append Row exactly matching the requested format
                 summary_rows.append({
@@ -365,7 +370,7 @@ with tab_exec:
                 column_config={
                     "Repoert send to the client": st.column_config.NumberColumn(
                         "Repoert send to the client",
-                        help="Sum of floors where Is Report Visit is YES"
+                        help="Sum of floors where Is Report Visit is YES (Text names = 1 floor)"
                     )
                 }
             )
