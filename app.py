@@ -52,10 +52,10 @@ def load_data():
         if not raw_data or len(raw_data) < 2:
             continue
             
-        # BULLETPROOF FIX 1: Extract headers
+        # Extract headers
         raw_headers = [str(h).strip() for h in raw_data[0]] 
         
-        # BULLETPROOF FIX 1.5: Fix Duplicate Columns instantly
+        # Fix Duplicate Columns instantly
         seen = {}
         headers = []
         for h in raw_headers:
@@ -97,11 +97,21 @@ def get_visit_status(row):
     if sub_date and sub_date.lower() not in ['nan', 'none', '']: return 'Submitted'
     return 'Pending'
 
+def calc_floors(series):
+    total = 0
+    for val in series:
+        try:
+            total += int(val)
+        except:
+            total += 1 if str(val).strip() else 0
+    return total
+
 # --- 5. UI Setup ---
 st.title("📊 Site Visit Deep Analytics")
 st.markdown("Live data synchronized directly from your Google Sheets.")
 
-tab_visits, tab_master = st.tabs(["📊 Visit Analytics", "📈 Master Projects"])
+# Added the third tab here!
+tab_visits, tab_master, tab_exec = st.tabs(["📊 Visit Analytics", "📈 Master Projects", "💼 Executive Dashboard"])
 
 # ==========================================
 # TAB 1: VISIT ANALYTICS
@@ -146,12 +156,7 @@ with tab_visits:
         tech_na = len(filtered_v[filtered_v['Status'] == 'Technical (NA)'])
         
         submitted_df = filtered_v[filtered_v['Status'] == 'Submitted']
-        total_floors = 0
-        for val in submitted_df.get('FloorsVisited', submitted_df.get('Floors Visited', [])):
-            try:
-                total_floors += int(val)
-            except:
-                total_floors += 1 if str(val).strip() else 0
+        total_floors = calc_floors(submitted_df.get('FloorsVisited', submitted_df.get('Floors Visited', [])))
 
         kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
         kpi1.metric("Total Visits", total_visits)
@@ -180,10 +185,7 @@ with tab_visits:
 
         st.subheader("Visit Records")
         display_cols = [c for c in ['Source Sheet', 'Visit ID', 'Site Name', 'Tower Name', 'FloorsVisited', 'Associate ID', 'Date of Visit', 'Status', 'Report Submitted Date', 'Comment'] if c in filtered_v.columns]
-        
-        # BULLETPROOF FIX 2: Prevent Arrow mixed type crashes
         st.dataframe(filtered_v[display_cols].astype(str), use_container_width=True)
-
 
 # ==========================================
 # TAB 2: MASTER PROJECT ANALYTICS
@@ -269,6 +271,123 @@ with tab_master:
                 st.plotly_chart(fig4, use_container_width=True)
 
         st.subheader("Master Projects Directory")
-        
-        # BULLETPROOF FIX 3: Prevent Arrow crashes
         st.dataframe(filtered_m.astype(str), use_container_width=True)
+
+
+# ==========================================
+# TAB 3: EXECUTIVE DASHBOARD
+# ==========================================
+with tab_exec:
+    if visits_df.empty:
+        st.warning("No data available for Executive Dashboard.")
+    else:
+        # Create Month Filter specifically for Executive View
+        st.subheader("Multi-Month Associate Performance Tracking")
+        all_months_exec = ['All Time'] + list(visits_df['Month'].astype(str).unique())
+        selected_month = st.selectbox("Select Month", all_months_exec, key="exec_month_filter")
+        
+        df_exec = visits_df.copy()
+        if selected_month != 'All Time':
+            df_exec = df_exec[df_exec['Month'] == selected_month]
+
+        # 1. Executive KPIs
+        tot_tower_visits = len(df_exec) 
+        tot_site_visits = df_exec['Site Name'].nunique() if 'Site Name' in df_exec.columns else 0
+        tot_sent = len(df_exec[df_exec['Status'] == 'Submitted'])
+        tot_pending = len(df_exec[df_exec['Status'] == 'Pending'])
+
+        e_kpi1, e_kpi2, e_kpi3, e_kpi4 = st.columns(4)
+        e_kpi1.metric("🏢 Total Tower Visits", tot_tower_visits)
+        e_kpi2.metric("📍 Total Site Visits", tot_site_visits)
+        e_kpi3.metric("📄 Total Reports Sent", tot_sent)
+        e_kpi4.metric("⏱️ Pending Reports", tot_pending)
+        
+        st.markdown("---")
+
+        # 2. Executive Charts
+        e_chart1, e_chart2, e_list = st.columns([2, 2, 1])
+        
+        with e_chart1:
+            st.markdown("##### Reports Sent to Client by Associate")
+            sent_data = df_exec[df_exec['Status'] == 'Submitted']['Associate ID'].value_counts().reset_index()
+            sent_data.columns = ['Associate ID', 'Reports']
+            if not sent_data.empty:
+                fig_sent = px.bar(sent_data, x='Reports', y='Associate ID', orientation='h', color_discrete_sequence=['#3b82f6'])
+                fig_sent.update_layout(yaxis={'categoryorder':'total ascending'})
+                st.plotly_chart(fig_sent, use_container_width=True)
+            else:
+                st.info("No submitted reports for this period.")
+
+        with e_chart2:
+            st.markdown("##### Tower Visits Breakdown by Associate")
+            tower_data = df_exec['Associate ID'].value_counts().reset_index()
+            tower_data.columns = ['Associate ID', 'Tower Visits']
+            if not tower_data.empty:
+                fig_tower = px.bar(tower_data, x='Tower Visits', y='Associate ID', orientation='h', color_discrete_sequence=['#10b981'])
+                fig_tower.update_layout(yaxis={'categoryorder':'total ascending'})
+                st.plotly_chart(fig_tower, use_container_width=True)
+            else:
+                st.info("No tower visits for this period.")
+                
+        with e_list:
+            st.markdown("##### Top 5 Sites Visited")
+            if 'Site Name' in df_exec.columns:
+                top_sites = df_exec['Site Name'].value_counts().head(5)
+                for i, (site, count) in enumerate(top_sites.items(), 1):
+                    st.markdown(f"**{i}. {site}**: {count} visits")
+            else:
+                st.info("No site data.")
+
+        st.markdown("---")
+
+        # 3. Associate Performance Tracking Table
+        st.markdown("##### Detailed Associate Performance Tracking")
+        
+        associate_stats = []
+        for assoc, group in df_exec.groupby('Associate ID'):
+            floor_visits = calc_floors(group.get('FloorsVisited', group.get('Floors Visited', [])))
+            site_visits = group['Site Name'].nunique() if 'Site Name' in group.columns else 0
+            
+            # Count Yes/No for Is Report Visit?
+            report_col = group.get('Is Report Visit?', pd.Series([''] * len(group))).astype(str).str.lower().str.strip()
+            mark_yes = len(report_col[report_col.isin(['yes', 'y', 'true'])])
+            sugg_no = len(report_col[report_col.isin(['no', 'n', 'false'])])
+            
+            pending = len(group[group['Status'] == 'Pending'])
+            sent = len(group[group['Status'] == 'Submitted'])
+            grand_total = len(group)
+            
+            associate_stats.append({
+                'Associate ID': assoc,
+                'Floor Visits': floor_visits,
+                'Site Visits': site_visits,
+                'Mark (Yes)': mark_yes,
+                'Sugg (No)': sugg_no,
+                'Pending': pending,
+                'Sent': sent,
+                'Backlog': pending, # Assuming backlog is pending reports
+                'Grand Total': grand_total
+            })
+
+        if associate_stats:
+            perf_df = pd.DataFrame(associate_stats)
+            
+            # Add a "Team Aggregate" Row at the bottom
+            total_row = pd.DataFrame([{
+                'Associate ID': 'TEAM AGGREGATE',
+                'Floor Visits': perf_df['Floor Visits'].sum(),
+                'Site Visits': perf_df['Site Visits'].sum(),
+                'Mark (Yes)': perf_df['Mark (Yes)'].sum(),
+                'Sugg (No)': perf_df['Sugg (No)'].sum(),
+                'Pending': perf_df['Pending'].sum(),
+                'Sent': perf_df['Sent'].sum(),
+                'Backlog': perf_df['Backlog'].sum(),
+                'Grand Total': perf_df['Grand Total'].sum()
+            }])
+            
+            perf_df = pd.concat([perf_df, total_row], ignore_index=True)
+            
+            # Display DataFrame
+            st.dataframe(perf_df.astype(str), use_container_width=True)
+        else:
+            st.info("No associate performance data available for this period.")
