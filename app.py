@@ -7,15 +7,29 @@ from google.oauth2.service_account import Credentials
 # --- 1. Page Config & CSS ---
 st.set_page_config(layout="wide", page_title="Site Visit Deep Analytics", page_icon="📊")
 
+# Custom CSS to make the dashboard look premium and match your design
 st.markdown("""
 <style>
     div[data-testid="metric-container"] {
         background-color: #ffffff;
         border: 1px solid #e2e8f0;
-        padding: 1rem;
-        border-radius: 0.75rem;
-        box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+        padding: 1.5rem;
+        border-radius: 1rem;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
     }
+    .highlight-card {
+        padding: 20px; 
+        border-radius: 12px; 
+        text-align: left; 
+        font-family: sans-serif;
+        font-weight: bold;
+        margin-top: 10px;
+    }
+    .card-blue { background-color: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
+    .card-green { background-color: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; }
+    .card-red { background-color: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
+    .card-title { font-size: 0.9rem; margin-bottom: 5px; opacity: 0.8; }
+    .card-value { font-size: 1.2rem; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -92,27 +106,19 @@ def get_visit_status(row):
     return 'Pending'
 
 def parse_floor(val):
-    """
-    Core Logic: If it's a number, return the number. 
-    If it's any text/name, consider it as 1. 
-    If it's completely empty, consider it as 0.
-    """
     val_str = str(val).strip()
     if not val_str or val_str.lower() in ['nan', 'none', 'null', 'n/a', '-']:
         return 0
     try:
-        # Try to convert to float first (in case of '2.0'), then integer
         return int(float(val_str))
     except ValueError:
-        # If it hits an error, it means it is text (e.g., "John Doe", "Ground Floor")
-        # Rule: If there is any text, consider it as 1
         return 1
 
 # --- 5. UI Setup ---
 st.title("📊 Site Visit Deep Analytics")
 st.markdown("Live data synchronized directly from your Google Sheets.")
 
-tab_visits, tab_master, tab_exec = st.tabs(["📊 Visit Analytics", "📈 Master Projects", "👔 Executive Summary"])
+tab_visits, tab_master, tab_exec = st.tabs(["📊 Visit Analytics", "📈 Master Projects", "👔 Executive Dashboard"])
 
 # ==========================================
 # TAB 1: VISIT ANALYTICS
@@ -158,7 +164,6 @@ with tab_visits:
         
         submitted_df = filtered_v[filtered_v['Status'] == 'Submitted']
         
-        # Apply strict text=1 logic for Top KPI Floors
         floors_col_t1 = 'FloorsVisited' if 'FloorsVisited' in submitted_df.columns else 'Floors Visited'
         total_floors = sum(parse_floor(val) for val in submitted_df.get(floors_col_t1, []))
 
@@ -278,29 +283,30 @@ with tab_master:
         st.dataframe(filtered_m.astype(str), use_container_width=True)
 
 # ==========================================
-# TAB 3: EXECUTIVE SUMMARY (TABLE GENERATOR)
+# TAB 3: EXECUTIVE DASHBOARD (FULL UI)
 # ==========================================
 with tab_exec:
-    # 1. Ensure Date is formatted for the month filter globally
+    # 1. Format Date for Month Filter
     if 'Month' not in visits_df.columns and not visits_df.empty:
         visits_df['Month'] = pd.to_datetime(visits_df['Date of Visit'], errors='coerce').dt.strftime('%b %Y')
         visits_df['Month'] = visits_df['Month'].fillna('Unknown')
 
-    # 2. Create Header and Dropdown in the same row
+    # 2. Header and Month Dropdown Area
     exec_col1, exec_col2 = st.columns([4, 1])
     with exec_col1:
-        st.subheader("Monthly Summary (Associate Data)")
+        st.markdown("### Executive Dashboard")
+        st.markdown("Multi-month associate performance tracking & field analytics", unsafe_allow_html=True)
     with exec_col2:
         if not visits_df.empty:
             exec_months = ['All'] + list(visits_df['Month'].dropna().unique())
-            selected_month = st.selectbox("Month Filter", exec_months, label_visibility="collapsed")
+            selected_month = st.selectbox("Month", exec_months, label_visibility="collapsed")
         else:
             selected_month = 'All'
 
     if visits_df.empty:
-        st.warning("No Visit Log data found to build the summary.")
+        st.warning("No Visit Log data found to build the dashboard.")
     else:
-        # 3. Filter Data based on Dropdown
+        # Filter Data
         exec_filtered_df = visits_df.copy()
         if selected_month != 'All':
             exec_filtered_df = exec_filtered_df[exec_filtered_df['Month'] == selected_month]
@@ -308,69 +314,171 @@ with tab_exec:
         if exec_filtered_df.empty:
             st.info(f"No records found for {selected_month}.")
         else:
-            # Pre-process status logic so we can check for 'Pending'
+            # Prepare Data & Status
             if 'Status' not in exec_filtered_df.columns:
                 exec_filtered_df['Status'] = exec_filtered_df.apply(get_visit_status, axis=1)
 
-            # Apply the parse_floor logic (counts names/text as 1, converts numbers normally)
             floors_col = 'FloorsVisited' if 'FloorsVisited' in exec_filtered_df.columns else 'Floors Visited'
             exec_filtered_df['Num_Floors'] = exec_filtered_df.get(floors_col, pd.Series([], dtype=float)).apply(parse_floor)
-            
-            # Clean the "Is Report Visit?" column for accurate checking
             exec_filtered_df['Clean_Report_Mark'] = exec_filtered_df.get('Is Report Visit?', '').astype(str).str.strip().str.upper()
             
-            # Generate the Grouped Summary Table
+            # Build the Core Summary Table
             summary_rows = []
-            
-            # Group by Associate ID using the FILTERED dataframe
             for assoc, group in exec_filtered_df.groupby('Associate ID'):
                 if pd.isna(assoc) or str(assoc).strip() == '':
                     continue
                     
-                # 1. Floor Visit (Sum of FloorsVisited handling texts as 1)
                 floor_visit_sum = group['Num_Floors'].sum()
-                
-                # 2. Site Tower Visit (Count of Site Names)
                 site_tower_count = group['Site Name'].count() if 'Site Name' in group.columns else 0
-                
-                # 3. Report Mark (YES) -> count
                 report_yes_count = len(group[group['Clean_Report_Mark'].isin(['YES', 'Y', 'TRUE'])])
-                
-                # 4. Suggestion Visit (NO) -> count
                 report_no_count = len(group[group['Clean_Report_Mark'].isin(['NO', 'N', 'FALSE'])])
-                
-                # 5. Report Pending (From Status calculation)
                 report_pending = len(group[group['Status'] == 'Pending'])
                 
-                # 6. Report sent to the client 
-                # (Filter to YES reports only, then sum the strictly parsed Floors)
                 yes_reports = group[group['Clean_Report_Mark'].isin(['YES', 'Y', 'TRUE'])]
                 client_sent_floors = yes_reports['Num_Floors'].sum()
                 
-                # Append Row exactly matching the requested format
                 summary_rows.append({
                     'Associate ID': assoc,
                     'Floor Visit': int(floor_visit_sum),
                     'Site Tower visit': int(site_tower_count),
-                    'Repoert Mark (YES)': report_yes_count,
+                    'Report Mark (YES)': report_yes_count,
                     'Suggestion Visit (NO)': report_no_count,
                     'Report Pending': report_pending,
-                    'Repoert send to the client': int(client_sent_floors),
-                    'March Month(Pending) Repoert send to the client': 0, # Placeholder for previous month
-                    'report total with Pend': int(client_sent_floors)     # Summing current + previous
+                    'Report sent to the client': int(client_sent_floors),
+                    'March Month(Pending)': 0,
+                    'Report total with Pend': int(client_sent_floors)
                 })
                 
             summary_df = pd.DataFrame(summary_rows)
+
+            # --- TOP KPI METRICS ---
+            if not summary_df.empty:
+                total_floors = summary_df['Floor Visit'].sum()
+                total_sites = summary_df['Site Tower visit'].sum()
+                total_sent = summary_df['Report sent to the client'].sum()
+                total_pending = summary_df['Report Pending'].sum()
+            else:
+                total_floors = total_sites = total_sent = total_pending = 0
+
+            st.write("") # Spacer
+            kpi_col1, kpi_col2, kpi_col3, kpi_col4 = st.columns(4)
+            kpi_col1.metric("TOTAL FLOOR VISITS", total_floors)
+            kpi_col2.metric("TOTAL SITE VISITS", total_sites)
+            kpi_col3.metric("TOTAL REPORTS SENT", total_sent)
+            kpi_col4.metric("TOTAL PENDING REPORTS", total_pending)
+
+            st.write("") # Spacer
+            st.markdown("---")
+
+            # --- CHARTS SECTION ---
+            chart_col1, chart_col2 = st.columns(2)
             
-            # Display the stylized dataframe
-            st.dataframe(
-                summary_df, 
-                use_container_width=True, 
-                hide_index=True,
-                column_config={
-                    "Repoert send to the client": st.column_config.NumberColumn(
-                        "Repoert send to the client",
-                        help="Sum of floors where Is Report Visit is YES (Text names = 1 floor)"
+            with chart_col1:
+                st.markdown("#### 📊 Reports Sent to Client")
+                if not summary_df.empty:
+                    # Sort so biggest bars are on top
+                    sorted_df1 = summary_df.sort_values(by='Report sent to the client', ascending=True)
+                    fig_left = px.bar(
+                        sorted_df1, 
+                        x='Report sent to the client', 
+                        y='Associate ID', 
+                        orientation='h',
+                        text='Report sent to the client',
+                        color_discrete_sequence=['#3b82f6']
                     )
-                }
-            )
+                    fig_left.update_traces(textposition='outside')
+                    fig_left.update_layout(xaxis_title="", yaxis_title="", showlegend=False, margin=dict(l=0, r=0, t=30, b=0))
+                    st.plotly_chart(fig_left, use_container_width=True)
+                    
+            with chart_col2:
+                st.markdown("#### 🏢 Tower vs Site Visits Breakdown")
+                if not summary_df.empty:
+                    df_melted = summary_df.melt(
+                        id_vars='Associate ID', 
+                        value_vars=['Floor Visit', 'Site Tower visit'], 
+                        var_name='Visit Type', 
+                        value_name='Count'
+                    )
+                    fig_right = px.bar(
+                        df_melted, 
+                        x='Count', 
+                        y='Associate ID', 
+                        color='Visit Type', 
+                        barmode='group', 
+                        orientation='h',
+                        color_discrete_map={'Floor Visit': '#6366f1', 'Site Tower visit': '#10b981'}
+                    )
+                    fig_right.update_layout(xaxis_title="", yaxis_title="", legend_title="", margin=dict(l=0, r=0, t=30, b=0))
+                    st.plotly_chart(fig_right, use_container_width=True)
+
+            # --- DETAILED PERFORMANCE BREAKDOWN TABLE ---
+            st.markdown("#### 📋 Detailed Performance Breakdown")
+            
+            if not summary_df.empty:
+                # Add TEAM TOTALS row at the bottom for a clean look
+                total_row = pd.DataFrame([{
+                    'Associate ID': 'TEAM TOTALS',
+                    'Floor Visit': total_floors,
+                    'Site Tower visit': total_sites,
+                    'Report Mark (YES)': summary_df['Report Mark (YES)'].sum(),
+                    'Suggestion Visit (NO)': summary_df['Suggestion Visit (NO)'].sum(),
+                    'Report Pending': total_pending,
+                    'Report sent to the client': total_sent,
+                    'March Month(Pending)': 0,
+                    'Report total with Pend': summary_df['Report total with Pend'].sum()
+                }])
+                display_df = pd.concat([summary_df, total_row], ignore_index=True)
+                
+                # Show dataframe
+                st.dataframe(
+                    display_df, 
+                    use_container_width=True, 
+                    hide_index=True
+                )
+                
+                # --- BOTTOM HIGHLIGHT CARDS ---
+                # Calculate Highlights dynamically
+                highest_coverage_str = "None"
+                highest_prod_str = "None"
+                critical_gaps_str = "None"
+                
+                if len(summary_df) > 0:
+                    idx_max_site = summary_df['Site Tower visit'].idxmax()
+                    highest_coverage_str = f"{summary_df.loc[idx_max_site, 'Associate ID']} ({summary_df.loc[idx_max_site, 'Site Tower visit']} Sites)"
+                    
+                    idx_max_floor = summary_df['Floor Visit'].idxmax()
+                    highest_prod_str = f"{summary_df.loc[idx_max_floor, 'Associate ID']} ({summary_df.loc[idx_max_floor, 'Floor Visit']} Floors)"
+                    
+                    # Find associates with 0 sent reports
+                    zero_sent_df = summary_df[summary_df['Report sent to the client'] == 0]
+                    if not zero_sent_df.empty:
+                        critical_gaps_str = ", ".join(zero_sent_df['Associate ID'].tolist()) + " (0 Sent)"
+                    else:
+                        critical_gaps_str = "All Associates Active"
+
+                st.write("")
+                h_col1, h_col2, h_col3 = st.columns(3)
+                
+                with h_col1:
+                    st.markdown(f"""
+                    <div class="highlight-card card-blue">
+                        <div class="card-title">🌎 Highest Coverage</div>
+                        <div class="card-value">{highest_coverage_str}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                with h_col2:
+                    st.markdown(f"""
+                    <div class="highlight-card card-green">
+                        <div class="card-title">🚀 Highest Productivity</div>
+                        <div class="card-value">{highest_prod_str}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                with h_col3:
+                    st.markdown(f"""
+                    <div class="highlight-card card-red">
+                        <div class="card-title">⏳ Critical Gaps</div>
+                        <div class="card-value">{critical_gaps_str}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
