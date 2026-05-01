@@ -1,361 +1,274 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from datetime import date
-import requests
-from io import StringIO
+import gspread
+from google.oauth2.service_account import Credentials
 
-st.set_page_config(
-    page_title="Site Visit Dashboard",
-    page_icon="📊",
-    layout="wide"
-)
+# --- 1. Page Config & CSS ---
+st.set_page_config(layout="wide", page_title="Site Visit Deep Analytics", page_icon="📊")
 
-# ---------------- CONFIG ----------------
-SPREADSHEET_ID = st.secrets["GOOGLE_SHEET_ID"]
-API_KEY = st.secrets["GOOGLE_API_KEY"]
-
-SHEETS = {
-    "VisitLog": "VisitLog",
-    "ProjectConfigStatus": "ProjectConfigStatus",
-    "MasterProject": "MasterProject",
-}
-
-# ---------------- STYLE ----------------
 st.markdown("""
 <style>
-.main {background-color:#ffffff;}
-.block-container {padding-top:1.5rem;}
-.header {
-    background:#0b5ed7;
-    padding:18px;
-    border-radius:12px;
-    color:white;
-    margin-bottom:20px;
-}
-.kpi-card {
-    background:#f8f9fa;
-    padding:18px;
-    border-radius:12px;
-    border-left:5px solid #0b5ed7;
-}
-.red {color:#dc3545;font-weight:700;}
-.orange {color:#fd7e14;font-weight:700;}
-.yellow {color:#ffc107;font-weight:700;}
-.green {color:#198754;font-weight:700;}
+    div[data-testid="metric-container"] {
+        background-color: #ffffff;
+        border: 1px solid #e2e8f0;
+        padding: 1rem;
+        border-radius: 0.75rem;
+        box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+    }
 </style>
 """, unsafe_allow_html=True)
 
-# ---------------- LOAD GOOGLE SHEET ----------------
-@st.cache_data(ttl=300)
-def load_sheet(sheet_name):
-    url = (
-        f"https://sheets.googleapis.com/v4/spreadsheets/"
-        f"{SPREADSHEET_ID}/values/{sheet_name}?key={API_KEY}"
-    )
-    response = requests.get(url)
+# --- 2. Google Sheets Connection ---
+@st.cache_resource
+def init_connection():
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ]
+    creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scopes)
+    return gspread.authorize(creds)
 
-    if response.status_code != 200:
-        st.error(f"Cannot load sheet: {sheet_name}")
-        st.write(response.text)
-        return pd.DataFrame()
+client = init_connection()
+SHEET_URL = "https://docs.google.com/spreadsheets/d/1J1K31wLOepJMO6DPHySUGR43GpV2sV7PqSHetO_EFjo/edit?gid=502709304#gid=502709304" 
 
-    values = response.json().get("values", [])
-    if not values:
-        return pd.DataFrame()
+# --- 3. Load Data from Google Sheets ---
+@st.cache_data(ttl=300) 
+def load_data():
+    try:
+        spreadsheet = client.open_by_url(SHEET_URL)
+    except Exception as e:
+        st.error(f"Could not open Google Sheet. Ensure it is shared with the service account email. Error: {e}")
+        return pd.DataFrame(), pd.DataFrame()
 
-    headers = values[0]
-    rows = values[1:]
+    worksheets = spreadsheet.worksheets()
+    visit_dataframes = []
+    master_df = pd.DataFrame()
 
-    df = pd.DataFrame(rows, columns=headers)
+    for ws in worksheets:
+        title = ws.title.lower()
+        
+        raw_data = ws.get_all_values()
+        if not raw_data or len(raw_data) < 2:
+            continue
+            
+        # BULLETPROOF FIX 1: Extract headers
+        raw_headers = [str(h).strip() for h in raw_data[0]] 
+        
+        # BULLETPROOF FIX 1.5: Fix Duplicate Columns instantly
+        seen = {}
+        headers = []
+        for h in raw_headers:
+            if h in seen:
+                seen[h] += 1
+                headers.append(f"{h}_{seen[h]}")
+            else:
+                seen[h] = 0
+                headers.append(h)
+                
+        df = pd.DataFrame(raw_data[1:], columns=headers)
+        
+        # Grab Master Sheet
+        if 'master' in title:
+            master_df = df
+            continue
+            
+        # Skip Config Sheets
+        if any(skip in title for skip in ['setting', 'config', 'associate']):
+            continue
+            
+        # Process Visit Logs
+        if not df.empty and ('Site Name' in df.columns or 'Visit ID' in df.columns):
+            df['Source Sheet'] = ws.title
+            visit_dataframes.append(df)
 
-    return df
+    visits_df = pd.concat(visit_dataframes, ignore_index=True) if visit_dataframes else pd.DataFrame()
+    return visits_df, master_df
 
+# Load the data
+visits_df, master_df = load_data()
 
-def clean_date(series):
-    return pd.to_datetime(series, errors="coerce").dt.date
+# --- 4. Helper Functions ---
+def get_visit_status(row):
+    is_report = str(row.get('Is Report Visit?', '')).strip().lower()
+    sub_date = str(row.get('Report Submitted Date', '')).strip()
+    
+    if is_report in ['no', 'false', 'n/a']: return 'Technical (NA)'
+    if sub_date and sub_date.lower() not in ['nan', 'none', '']: return 'Submitted'
+    return 'Pending'
 
+# --- 5. UI Setup ---
+st.title("📊 Site Visit Deep Analytics")
+st.markdown("Live data synchronized directly from your Google Sheets.")
 
-def find_col(df, possible_names):
-    cols = {c.strip().lower(): c for c in df.columns}
-    for name in possible_names:
-        if name.lower() in cols:
-            return cols[name.lower()]
-    return None
+tab_visits, tab_master = st.tabs(["📊 Visit Analytics", "📈 Master Projects"])
 
-
-visit = load_sheet("VisitLog")
-project = load_sheet("ProjectConfigStatus")
-master = load_sheet("MasterProject")
-
-# ---------------- COLUMN DETECTION ----------------
-visit_date_col = find_col(visit, ["Date of Visit", "Visit Date", "Date"])
-site_col = find_col(visit, ["Site Name", "Project Name", "Site"])
-tower_col = find_col(visit, ["Tower Name", "Tower"])
-associate_col = find_col(visit, ["Associate Name", "Associate ID", "Associate"])
-floors_col = find_col(visit, ["Floors Visited", "Submitted Floors", "Floor"])
-report_visit_col = find_col(visit, ["Is Report Visit?", "Report Visit", "Is Report Visit"])
-report_submitted_col = find_col(visit, ["Report Submitted Date", "Submitted Date"])
-comment_col = find_col(visit, ["Comment", "Comments", "Remark", "Remarks"])
-
-next_due_col = find_col(project, ["Next Due Date", "Due Date"])
-days_until_due_col = find_col(project, ["Days Until Due"])
-project_status_col = find_col(project, ["Project Status", "Status"])
-project_site_col = find_col(project, ["Site Name", "Project Name", "Site"])
-created_col = find_col(project, ["CreatedAt", "Created At"])
-
-state_col = find_col(master, ["State"])
-city_col = find_col(master, ["City"])
-master_site_col = find_col(master, ["Site Name", "Project Name", "Site"])
-
-today = date.today()
-
-# ---------------- PREPARE DATA ----------------
-if not visit.empty and visit_date_col:
-    visit[visit_date_col] = clean_date(visit[visit_date_col])
-
-if not project.empty and next_due_col:
-    project[next_due_col] = clean_date(project[next_due_col])
-
-if not project.empty and created_col:
-    project[created_col] = clean_date(project[created_col])
-
-if not project.empty and next_due_col:
-    project["Days Until Due Auto"] = (
-        pd.to_datetime(project[next_due_col], errors="coerce").dt.date - today
-    ).apply(lambda x: x.days if pd.notnull(x) else None)
-
-if days_until_due_col and days_until_due_col in project.columns:
-    project["Days Until Due Final"] = pd.to_numeric(project[days_until_due_col], errors="coerce")
-else:
-    project["Days Until Due Final"] = project.get("Days Until Due Auto")
-
-# ---------------- MERGE DATA ----------------
-today_visits = visit.copy()
-
-if visit_date_col:
-    today_visits = today_visits[today_visits[visit_date_col] == today]
-
-if site_col and project_site_col and not today_visits.empty:
-    today_visits = today_visits.merge(
-        project,
-        left_on=site_col,
-        right_on=project_site_col,
-        how="left",
-        suffixes=("", "_project")
-    )
-
-if site_col and master_site_col and not today_visits.empty:
-    today_visits = today_visits.merge(
-        master,
-        left_on=site_col,
-        right_on=master_site_col,
-        how="left",
-        suffixes=("", "_master")
-    )
-
-# ---------------- HEADER ----------------
-st.markdown("""
-<div class="header">
-<h1>📊 Site Visit Deep Analytics</h1>
-<p>Live data synchronized directly from Google Sheets</p>
-</div>
-""", unsafe_allow_html=True)
-
-tab1, tab2 = st.tabs(["📊 Visit Analytics", "📋 Master Projects"])
-
-# ---------------- TAB 1 ----------------
-with tab1:
-    st.subheader("Data Filters")
-
-    c1, c2, c3, c4, c5 = st.columns(5)
-
-    with c1:
-        date_filter = st.date_input("Date", today)
-
-    filtered = visit.copy()
-    if visit_date_col:
-        filtered = filtered[filtered[visit_date_col] == date_filter]
-
-    with c2:
-        associate_options = ["All"]
-        if associate_col:
-            associate_options += sorted(filtered[associate_col].dropna().unique().tolist())
-        selected_associate = st.selectbox("Associate", associate_options)
-
-    with c3:
-        site_options = ["All"]
-        if site_col:
-            site_options += sorted(filtered[site_col].dropna().unique().tolist())
-        selected_site = st.selectbox("Site Name", site_options)
-
-    with c4:
-        status_options = ["All"]
-        if project_status_col and project_status_col in filtered.columns:
-            status_options += sorted(filtered[project_status_col].dropna().unique().tolist())
-        selected_status = st.selectbox("Project Status", status_options)
-
-    with c5:
-        report_options = ["All", "Submitted", "Pending"]
-        selected_report = st.selectbox("Report Status", report_options)
-
-    if selected_associate != "All" and associate_col:
-        filtered = filtered[filtered[associate_col] == selected_associate]
-
-    if selected_site != "All" and site_col:
-        filtered = filtered[filtered[site_col] == selected_site]
-
-    # ---------------- KPI ----------------
-    total_projects = len(project)
-    projects_visited_today = today_visits[site_col].nunique() if site_col and not today_visits.empty else 0
-    total_visits_today = len(today_visits)
-
-    pending_reports = 0
-    submitted_reports = 0
-
-    if report_submitted_col and report_submitted_col in today_visits.columns:
-        pending_reports = today_visits[report_submitted_col].replace("", pd.NA).isna().sum()
-        submitted_reports = today_visits[report_submitted_col].replace("", pd.NA).notna().sum()
-
-    overdue_projects = 0
-    due_today = 0
-    due_next_2 = 0
-
-    if "Days Until Due Final" in project.columns:
-        overdue_projects = (project["Days Until Due Final"] < 0).sum()
-        due_today = (project["Days Until Due Final"] == 0).sum()
-        due_next_2 = project["Days Until Due Final"].between(1, 2).sum()
-
-    active_projects = 0
-    completed_projects = 0
-
-    if project_status_col:
-        active_projects = project[project_status_col].astype(str).str.contains("active", case=False, na=False).sum()
-        completed_projects = project[project_status_col].astype(str).str.contains("complete", case=False, na=False).sum()
-
-    k1, k2, k3, k4, k5 = st.columns(5)
-    k1.metric("Total Projects", total_projects)
-    k2.metric("Projects Visited Today", projects_visited_today)
-    k3.metric("Total Visits Today", total_visits_today)
-    k4.metric("Pending Reports", pending_reports)
-    k5.metric("Submitted Reports", submitted_reports)
-
-    k6, k7, k8, k9, k10 = st.columns(5)
-    k6.metric("Overdue Projects", overdue_projects)
-    k7.metric("Due Today", due_today)
-    k8.metric("Due in Next 2 Days", due_next_2)
-    k9.metric("Active Projects", active_projects)
-    k10.metric("Completed Projects", completed_projects)
-
-    st.divider()
-
-    # ---------------- ALERTS ----------------
-    st.subheader("Alerts")
-
-    a1, a2, a3, a4 = st.columns(4)
-    a1.markdown(f"<p class='red'>Overdue Projects: {overdue_projects}</p>", unsafe_allow_html=True)
-    a2.markdown(f"<p class='orange'>Due Today: {due_today}</p>", unsafe_allow_html=True)
-    a3.markdown(f"<p class='yellow'>Due in 2 Days: {due_next_2}</p>", unsafe_allow_html=True)
-    a4.markdown(f"<p class='red'>Pending Reports: {pending_reports}</p>", unsafe_allow_html=True)
-
-    st.divider()
-
-    # ---------------- TODAY TABLE ----------------
-    st.subheader("Today’s Work Table")
-
-    table_cols = []
-    for col in [
-        site_col,
-        tower_col,
-        associate_col,
-        visit_date_col,
-        floors_col,
-        report_visit_col,
-        comment_col,
-        next_due_col,
-        "Days Until Due Final",
-        project_status_col,
-    ]:
-        if col and col in today_visits.columns and col not in table_cols:
-            table_cols.append(col)
-
-    if not today_visits.empty and table_cols:
-        st.dataframe(today_visits[table_cols], use_container_width=True, height=350)
+# ==========================================
+# TAB 1: VISIT ANALYTICS
+# ==========================================
+with tab_visits:
+    if visits_df.empty:
+        st.warning("No Visit Log data found.")
     else:
-        st.info("No records found for today.")
+        visits_df['Status'] = visits_df.apply(get_visit_status, axis=1)
+        visits_df['Month'] = pd.to_datetime(visits_df['Date of Visit'], errors='coerce').dt.strftime('%b %Y')
+        visits_df['Month'].fillna('Unknown', inplace=True)
 
-    st.divider()
+        st.subheader("Data Filters")
+        col1, col2, col3, col4, col5 = st.columns(5)
+        
+        with col1:
+            sources = ['All'] + list(visits_df['Source Sheet'].astype(str).unique())
+            f_source = st.selectbox("Source Sheet", sources)
+        with col2:
+            months = ['All'] + list(visits_df['Month'].astype(str).unique())
+            f_month = st.selectbox("Month", months)
+        with col3:
+            statuses = ['All'] + list(visits_df['Status'].astype(str).unique())
+            f_status = st.selectbox("Status", statuses)
+        with col4:
+            associates = ['All'] + list(visits_df['Associate ID'].astype(str).unique())
+            f_assoc = st.selectbox("Associate", associates)
+        with col5:
+            sites = ['All'] + list(visits_df['Site Name'].astype(str).unique())
+            f_site = st.selectbox("Site Name", sites)
 
-    # ---------------- CHARTS ----------------
-    st.subheader("Work Status Charts")
+        filtered_v = visits_df.copy()
+        if f_source != 'All': filtered_v = filtered_v[filtered_v['Source Sheet'].astype(str) == f_source]
+        if f_month != 'All': filtered_v = filtered_v[filtered_v['Month'].astype(str) == f_month]
+        if f_status != 'All': filtered_v = filtered_v[filtered_v['Status'].astype(str) == f_status]
+        if f_assoc != 'All': filtered_v = filtered_v[filtered_v['Associate ID'].astype(str) == f_assoc]
+        if f_site != 'All': filtered_v = filtered_v[filtered_v['Site Name'].astype(str) == f_site]
 
-    c1, c2 = st.columns(2)
+        total_visits = len(filtered_v)
+        pending = len(filtered_v[filtered_v['Status'] == 'Pending'])
+        submitted = len(filtered_v[filtered_v['Status'] == 'Submitted'])
+        tech_na = len(filtered_v[filtered_v['Status'] == 'Technical (NA)'])
+        
+        submitted_df = filtered_v[filtered_v['Status'] == 'Submitted']
+        total_floors = 0
+        for val in submitted_df.get('FloorsVisited', submitted_df.get('Floors Visited', [])):
+            try:
+                total_floors += int(val)
+            except:
+                total_floors += 1 if str(val).strip() else 0
 
-    with c1:
-        if associate_col and not filtered.empty:
-            chart = filtered[associate_col].value_counts().reset_index()
-            chart.columns = ["Associate", "Visits"]
-            fig = px.bar(chart, x="Associate", y="Visits", title="Visits Today by Associate")
-            st.plotly_chart(fig, use_container_width=True)
+        kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
+        kpi1.metric("Total Visits", total_visits)
+        kpi2.metric("Pending Reports", pending)
+        kpi3.metric("Technical (NA)", tech_na)
+        kpi4.metric("Submitted", submitted)
+        kpi5.metric("Submitted Floors", total_floors)
 
-    with c2:
-        if site_col and not filtered.empty:
-            chart = filtered[site_col].value_counts().head(10).reset_index()
-            chart.columns = ["Site", "Visits"]
-            fig = px.bar(chart, x="Site", y="Visits", title="Visits Today by Site")
-            st.plotly_chart(fig, use_container_width=True)
+        st.markdown("---")
 
-    c3, c4 = st.columns(2)
+        chart_col1, chart_col2 = st.columns(2)
+        with chart_col1:
+            st.markdown("##### Visits Per Month")
+            month_counts = filtered_v['Month'].value_counts().reset_index()
+            month_counts.columns = ['Month', 'Visits']
+            fig1 = px.bar(month_counts, x='Month', y='Visits', color_discrete_sequence=['#6366f1'])
+            st.plotly_chart(fig1, use_container_width=True)
 
-    with c3:
-        if project_status_col and not project.empty:
-            chart = project[project_status_col].value_counts().reset_index()
-            chart.columns = ["Status", "Count"]
-            fig = px.pie(chart, names="Status", values="Count", title="Projects by Status")
-            st.plotly_chart(fig, use_container_width=True)
+        with chart_col2:
+            st.markdown("##### Top Sites / Zones")
+            site_counts = filtered_v['Site Name'].value_counts().nlargest(6).reset_index()
+            site_counts.columns = ['Site Name', 'Visits']
+            fig2 = px.pie(site_counts, names='Site Name', values='Visits', hole=0.4, 
+                          color_discrete_sequence=['#6366f1', '#14b8a6', '#f59e0b', '#f43f5e', '#8b5cf6', '#0ea5e9'])
+            st.plotly_chart(fig2, use_container_width=True)
 
-    with c4:
-        if "Days Until Due Final" in project.columns:
-            status_data = {
-                "Status": ["Overdue", "Due Soon", "On Track"],
-                "Count": [
-                    (project["Days Until Due Final"] < 0).sum(),
-                    project["Days Until Due Final"].between(0, 2).sum(),
-                    (project["Days Until Due Final"] > 2).sum(),
-                ],
-            }
-            fig = px.bar(pd.DataFrame(status_data), x="Status", y="Count", title="Overdue vs Due Soon vs On Track")
-            st.plotly_chart(fig, use_container_width=True)
+        st.subheader("Visit Records")
+        display_cols = [c for c in ['Source Sheet', 'Visit ID', 'Site Name', 'Tower Name', 'FloorsVisited', 'Associate ID', 'Date of Visit', 'Status', 'Report Submitted Date', 'Comment'] if c in filtered_v.columns]
+        
+        # BULLETPROOF FIX 2: Prevent Arrow mixed type crashes
+        st.dataframe(filtered_v[display_cols].astype(str), use_container_width=True)
 
-    c5, c6 = st.columns(2)
 
-    with c5:
-        report_data = pd.DataFrame({
-            "Report Status": ["Submitted", "Pending"],
-            "Count": [submitted_reports, pending_reports]
-        })
-        fig = px.pie(report_data, names="Report Status", values="Count", title="Report Submitted vs Not Submitted")
-        st.plotly_chart(fig, use_container_width=True)
-
-    with c6:
-        if tower_col and not filtered.empty:
-            chart = filtered[tower_col].value_counts().head(10).reset_index()
-            chart.columns = ["Tower", "Visits"]
-            fig = px.bar(chart, x="Tower", y="Visits", title="Today’s Visits by Tower")
-            st.plotly_chart(fig, use_container_width=True)
-
-# ---------------- TAB 2 ----------------
-with tab2:
-    st.subheader("Master Project Data")
-
-    if not master.empty:
-        st.dataframe(master, use_container_width=True, height=500)
+# ==========================================
+# TAB 2: MASTER PROJECT ANALYTICS
+# ==========================================
+with tab_master:
+    if master_df.empty:
+        st.warning("No Master Project data found.")
     else:
-        st.info("MasterProject sheet not found or empty.")
+        def safe_col(options):
+            for o in options:
+                if o in master_df.columns: return o
+            return None
 
-    st.subheader("Project Configuration Status")
+        col_state = safe_col(['STATE', 'State'])
+        col_dist = safe_col(['DISTRICT / CITY', 'DISTRICT', 'District'])
+        col_stat = safe_col(['STATUS OF PROJECT', 'Status', 'STATUS'])
+        col_tech = safe_col(['Technical Person', 'TECHNICAL PERSON NAME', 'TECHNICAL PERSON'])
+        col_sale = safe_col(['Sells Person', 'SALES PERSON NAME', 'SALES PERSON', 'Sales Person'])
+        col_distr = safe_col(['Distributer', 'DISTRIBUTOR NANE', 'DISTRIBUTOR', 'Distributor'])
+        col_ong = safe_col(['VISIT ONGOING', 'Visit Ongoing'])
 
-    if not project.empty:
-        st.dataframe(project, use_container_width=True, height=500)
-    else:
-        st.info("ProjectConfigStatus sheet not found or empty.")
+        st.subheader("Master Filters")
+        m_c1, m_c2, m_c3, m_c4, m_c5, m_c6 = st.columns(6)
+        
+        filtered_m = master_df.copy()
+
+        if col_state:
+            f_state = m_c1.selectbox("State", ['All'] + list(filtered_m[col_state].astype(str).unique()))
+            if f_state != 'All': filtered_m = filtered_m[filtered_m[col_state].astype(str) == f_state]
+            
+        if col_dist:
+            f_dist = m_c2.selectbox("District", ['All'] + list(filtered_m[col_dist].astype(str).unique()))
+            if f_dist != 'All': filtered_m = filtered_m[filtered_m[col_dist].astype(str) == f_dist]
+            
+        if col_stat:
+            f_stat = m_c3.selectbox("Project Status", ['All'] + list(filtered_m[col_stat].astype(str).unique()))
+            if f_stat != 'All': filtered_m = filtered_m[filtered_m[col_stat].astype(str) == f_stat]
+            
+        if col_tech:
+            f_tech = m_c4.selectbox("Tech Person", ['All'] + list(filtered_m[col_tech].astype(str).unique()))
+            if f_tech != 'All': filtered_m = filtered_m[filtered_m[col_tech].astype(str) == f_tech]
+            
+        if col_sale:
+            f_sale = m_c5.selectbox("Sales Person", ['All'] + list(filtered_m[col_sale].astype(str).unique()))
+            if f_sale != 'All': filtered_m = filtered_m[filtered_m[col_sale].astype(str) == f_sale]
+
+        if col_distr:
+            f_distr = m_c6.selectbox("Distributor", ['All'] + list(filtered_m[col_distr].astype(str).unique()))
+            if f_distr != 'All': filtered_m = filtered_m[filtered_m[col_distr].astype(str) == f_distr]
+
+        total_proj = len(filtered_m)
+        active_proj = len(filtered_m[filtered_m[col_ong].astype(str).str.lower().isin(['yes', 'y', 'ongoing'])]) if col_ong else 0
+        unique_states = filtered_m[col_state].nunique() if col_state else 0
+        
+        teams_set = set()
+        if col_tech: teams_set.update(filtered_m[col_tech].dropna().astype(str).tolist())
+        if col_sale: teams_set.update(filtered_m[col_sale].dropna().astype(str).tolist())
+        
+        k1, k2, k3, k4 = st.columns(4)
+        k1.metric("Total Projects", total_proj)
+        k2.metric("Active Visits (Ongoing)", active_proj)
+        k3.metric("States Covered", unique_states)
+        k4.metric("Tech / Sales Teams", len([x for x in teams_set if x.strip() and x.lower() not in ['nan', 'none', '']]))
+
+        st.markdown("---")
+
+        m_chart1, m_chart2 = st.columns(2)
+        with m_chart1:
+            st.markdown("##### Projects by State")
+            if col_state:
+                state_c = filtered_m[col_state].value_counts().reset_index()
+                state_c.columns = ['State', 'Count']
+                fig3 = px.bar(state_c, x='State', y='Count', color_discrete_sequence=['#14b8a6'])
+                st.plotly_chart(fig3, use_container_width=True)
+                
+        with m_chart2:
+            st.markdown("##### Project Status")
+            if col_stat:
+                stat_c = filtered_m[col_stat].value_counts().reset_index()
+                stat_c.columns = ['Status', 'Count']
+                fig4 = px.pie(stat_c, names='Status', values='Count', hole=0.4,
+                             color_discrete_sequence=['#6366f1', '#14b8a6', '#f59e0b', '#f43f5e'])
+                st.plotly_chart(fig4, use_container_width=True)
+
+        st.subheader("Master Projects Directory")
+        
+        # BULLETPROOF FIX 3: Prevent Arrow crashes
+        st.dataframe(filtered_m.astype(str), use_container_width=True)
