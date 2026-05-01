@@ -110,7 +110,6 @@ def calc_floors(series):
 st.title("📊 Site Visit Deep Analytics")
 st.markdown("Live data synchronized directly from your Google Sheets.")
 
-# Added the third tab here!
 tab_visits, tab_master, tab_exec = st.tabs(["📊 Visit Analytics", "📈 Master Projects", "💼 Executive Dashboard"])
 
 # ==========================================
@@ -290,17 +289,23 @@ with tab_exec:
         if selected_month != 'All Time':
             df_exec = df_exec[df_exec['Month'] == selected_month]
 
-        # 1. Executive KPIs
+        # 1. Executive KPIs (Updated to 5 columns)
         tot_tower_visits = len(df_exec) 
         tot_site_visits = df_exec['Site Name'].nunique() if 'Site Name' in df_exec.columns else 0
         tot_sent = len(df_exec[df_exec['Status'] == 'Submitted'])
         tot_pending = len(df_exec[df_exec['Status'] == 'Pending'])
+        
+        # Calculate Submitted Floors specifically for this dashboard view
+        exec_submitted_df = df_exec[df_exec['Status'] == 'Submitted']
+        tot_floors_sent = calc_floors(exec_submitted_df.get('FloorsVisited', exec_submitted_df.get('Floors Visited', [])))
 
-        e_kpi1, e_kpi2, e_kpi3, e_kpi4 = st.columns(4)
+        # 5 Columns now!
+        e_kpi1, e_kpi2, e_kpi3, e_kpi4, e_kpi5 = st.columns(5)
         e_kpi1.metric("🏢 Total Tower Visits", tot_tower_visits)
         e_kpi2.metric("📍 Total Site Visits", tot_site_visits)
         e_kpi3.metric("📄 Total Reports Sent", tot_sent)
         e_kpi4.metric("⏱️ Pending Reports", tot_pending)
+        e_kpi5.metric("🏢 Submitted Floors", tot_floors_sent)
         
         st.markdown("---")
 
