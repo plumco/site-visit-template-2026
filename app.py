@@ -282,20 +282,27 @@ with tab_exec:
         if selected_month != 'All Time':
             df_exec = df_exec[df_exec['Month'] == selected_month]
 
-        # 1. Executive KPIs
+        # 1. Executive KPIs (NOW 6 COLUMNS!)
         tot_tower_visits = len(df_exec) 
         tot_site_visits = df_exec['Site Name'].nunique() if 'Site Name' in df_exec.columns else 0
         tot_sent = len(df_exec[df_exec['Status'] == 'Submitted'])
         tot_pending = len(df_exec[df_exec['Status'] == 'Pending'])
+        
+        # Calculate Submitted Floors
         exec_submitted_df = df_exec[df_exec['Status'] == 'Submitted']
         tot_floors_sent = calc_floors(exec_submitted_df.get('FloorsVisited', exec_submitted_df.get('Floors Visited', [])))
+        
+        # NEW: Calculate Total Floor Visits (All statuses)
+        tot_floors_all = calc_floors(df_exec.get('FloorsVisited', df_exec.get('Floors Visited', [])))
 
-        e_kpi1, e_kpi2, e_kpi3, e_kpi4, e_kpi5 = st.columns(5)
+        # 6 Columns Layout
+        e_kpi1, e_kpi2, e_kpi3, e_kpi4, e_kpi5, e_kpi6 = st.columns(6)
         e_kpi1.metric("🏢 Total Tower Visits", tot_tower_visits)
         e_kpi2.metric("📍 Total Site Visits", tot_site_visits)
         e_kpi3.metric("📄 Total Reports Sent", tot_sent)
         e_kpi4.metric("⏱️ Pending Reports", tot_pending)
         e_kpi5.metric("🏢 Submitted Floors", tot_floors_sent)
+        e_kpi6.metric("🏢 Total Floor Visits", tot_floors_all) # <-- NEW METRIC HERE
         
         st.markdown("---")
 
@@ -340,13 +347,13 @@ with tab_exec:
         
         associate_stats = []
         for assoc, group in df_exec.groupby('Associate ID'):
-            # PERFECT FIX 1: Only calculate floors for SUBMITTED reports to match the KPI card
+            # Only calculate floors for SUBMITTED reports to match the KPI card
             submitted_group = group[group['Status'] == 'Submitted']
             floor_visits = calc_floors(submitted_group.get('FloorsVisited', submitted_group.get('Floors Visited', [])))
             
             site_visits = group['Site Name'].nunique() if 'Site Name' in group.columns else 0
             
-            # PERFECT FIX 2: Mathematically balance Yes/No vs Grand Total
+            # Mathematically balance Yes/No vs Grand Total
             report_col = group.get('Is Report Visit?', pd.Series([''] * len(group))).astype(str).str.lower().str.strip()
             mark_yes = len(report_col[report_col.isin(['yes', 'y', 'true'])])
             sugg_no = len(group) - mark_yes 
@@ -354,7 +361,7 @@ with tab_exec:
             pending = len(group[group['Status'] == 'Pending'])
             sent = len(group[group['Status'] == 'Submitted'])
             
-            # PERFECT FIX 3: Backlog shows missing reports (Marked Yes, but not Sent or Pending)
+            # Backlog shows missing reports (Marked Yes, but not Sent or Pending)
             backlog = max(0, mark_yes - sent - pending)
             
             grand_total = len(group)
@@ -378,7 +385,7 @@ with tab_exec:
             total_row = pd.DataFrame([{
                 'Associate ID': 'TEAM AGGREGATE',
                 'Floor Visits': perf_df['Floor Visits'].sum(),
-                # PERFECT FIX 4: Team Aggregate uses true distinct count to match the 97 in the KPI card
+                # Team Aggregate uses true distinct count to match the KPI card
                 'Site Visits': df_exec['Site Name'].nunique() if 'Site Name' in df_exec.columns else 0, 
                 'Mark (Yes)': perf_df['Mark (Yes)'].sum(),
                 'Sugg (No)': perf_df['Sugg (No)'].sum(),
