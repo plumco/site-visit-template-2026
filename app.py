@@ -52,10 +52,8 @@ def load_data():
         if not raw_data or len(raw_data) < 2:
             continue
             
-        # BULLETPROOF FIX 1: Extract headers
         raw_headers = [str(h).strip() for h in raw_data[0]] 
         
-        # BULLETPROOF FIX 1.5: Fix Duplicate Columns instantly
         seen = {}
         headers = []
         for h in raw_headers:
@@ -68,16 +66,13 @@ def load_data():
                 
         df = pd.DataFrame(raw_data[1:], columns=headers)
         
-        # Grab Master Sheet
         if 'master' in title:
             master_df = df
             continue
             
-        # Skip Config Sheets
         if any(skip in title for skip in ['setting', 'config', 'associate']):
             continue
             
-        # Process Visit Logs
         if not df.empty and ('Site Name' in df.columns or 'Visit ID' in df.columns):
             df['Source Sheet'] = ws.title
             visit_dataframes.append(df)
@@ -85,7 +80,6 @@ def load_data():
     visits_df = pd.concat(visit_dataframes, ignore_index=True) if visit_dataframes else pd.DataFrame()
     return visits_df, master_df
 
-# Load the data
 visits_df, master_df = load_data()
 
 # --- 4. Helper Functions ---
@@ -101,7 +95,7 @@ def get_visit_status(row):
 st.title("📊 Site Visit Deep Analytics")
 st.markdown("Live data synchronized directly from your Google Sheets.")
 
-tab_visits, tab_master, tab_exec = st.tabs(["📊 Visit Analytics", "📈 Master Projects", "👔 Executive Dashboard"])
+tab_visits, tab_master, tab_exec = st.tabs(["📊 Visit Analytics", "📈 Master Projects", "👔 Executive Summary"])
 
 # ==========================================
 # TAB 1: VISIT ANALYTICS
@@ -149,9 +143,9 @@ with tab_visits:
         total_floors = 0
         for val in submitted_df.get('FloorsVisited', submitted_df.get('Floors Visited', [])):
             try:
-                total_floors += int(val)
+                total_floors += int(float(val))
             except:
-                total_floors += 1 if str(val).strip() else 0
+                pass
 
         kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
         kpi1.metric("Total Visits", total_visits)
@@ -180,8 +174,6 @@ with tab_visits:
 
         st.subheader("Visit Records")
         display_cols = [c for c in ['Source Sheet', 'Visit ID', 'Site Name', 'Tower Name', 'FloorsVisited', 'Associate ID', 'Date of Visit', 'Status', 'Report Submitted Date', 'Comment'] if c in filtered_v.columns]
-        
-        # BULLETPROOF FIX 2: Prevent Arrow mixed type crashes
         st.dataframe(filtered_v[display_cols].astype(str), use_container_width=True)
 
 
@@ -269,81 +261,78 @@ with tab_master:
                 st.plotly_chart(fig4, use_container_width=True)
 
         st.subheader("Master Projects Directory")
-        
-        # BULLETPROOF FIX 3: Prevent Arrow crashes
         st.dataframe(filtered_m.astype(str), use_container_width=True)
 
 # ==========================================
-# TAB 3: EXECUTIVE DASHBOARD
+# TAB 3: EXECUTIVE SUMMARY (TABLE GENERATOR)
 # ==========================================
 with tab_exec:
-    st.subheader("Executive Overview")
+    st.subheader("Monthly Summary (Associate Data)")
     
     if visits_df.empty:
-        st.warning("No Visit Log data found to build the dashboard.")
+        st.warning("No Visit Log data found to build the summary.")
     else:
-        # Helper to safely sum floors (accounting for string/dirty data)
-        def safe_sum_floors(series):
-            total = 0
-            for val in series:
-                try:
-                    total += int(float(val))
-                except:
-                    total += 1 if str(val).strip() else 0
-            return total
+        # Pre-process status logic so we can check for 'Pending'
+        if 'Status' not in visits_df.columns:
+            visits_df['Status'] = visits_df.apply(get_visit_status, axis=1)
 
-        # Identify the correct floor column name
+        # Ensure FloorsVisited is numeric for summing
         floors_col = 'FloorsVisited' if 'FloorsVisited' in visits_df.columns else 'Floors Visited'
+        visits_df['Num_Floors'] = pd.to_numeric(visits_df.get(floors_col, []), errors='coerce').fillna(0)
         
-        # --- CALCULATIONS ---
-        # 1. Floor visited consider - FloorsVisited sum
-        total_floors_visited = safe_sum_floors(visits_df.get(floors_col, []))
+        # Clean the "Is Report Visit?" column for accurate checking
+        visits_df['Clean_Report_Mark'] = visits_df.get('Is Report Visit?', '').astype(str).str.strip().str.upper()
         
-        # 2. Site Tower visit consider site name count
-        site_visits_count = visits_df['Site Name'].count() if 'Site Name' in visits_df.columns else 0
+        # Generate the Grouped Summary Table
+        summary_rows = []
         
-        # 3. Report Mark (YES and NO) considered Is Report Visit?
-        # Clean the column to lowercase to catch "Yes", "YES", "yes", etc.
-        report_status = visits_df.get('Is Report Visit?', pd.Series([''] * len(visits_df))).astype(str).str.strip().str.lower()
-        
-        report_yes_count = len(visits_df[report_status.isin(['yes', 'y', 'true'])])
-        report_no_count = len(visits_df[report_status.isin(['no', 'n', 'false', 'n/a'])])
-        
-        # 4. Report send to the client (Is report visit? Yes and count FloorsVisited)
-        yes_reports_df = visits_df[report_status.isin(['yes', 'y', 'true'])]
-        client_reports_floors = safe_sum_floors(yes_reports_df.get(floors_col, []))
-
-        # --- UI DISPLAY ---
-        st.markdown("##### Key Performance Indicators")
-        e_col1, e_col2, e_col3, e_col4, e_col5 = st.columns(5)
-        
-        e_col1.metric("Total Floors Visited", total_floors_visited)
-        e_col2.metric("Site/Tower Visits", site_visits_count)
-        e_col3.metric("Reports Marked: YES", report_yes_count)
-        e_col4.metric("Reports Marked: NO", report_no_count)
-        e_col5.metric("Client Reports (Floors)", client_reports_floors)
-
-        st.markdown("---")
-        
-        # Optional: Add charts to make it a true Executive Dashboard
-        chart_exec1, chart_exec2 = st.columns(2)
-        
-        with chart_exec1:
-            st.markdown("##### Report Marking Distribution")
-            report_data = pd.DataFrame({
-                'Status': ['YES', 'NO'], 
-                'Count': [report_yes_count, report_no_count]
-            })
-            fig_e1 = px.pie(report_data, names='Status', values='Count', hole=0.4, 
-                            color_discrete_sequence=['#14b8a6', '#f43f5e'])
-            st.plotly_chart(fig_e1, use_container_width=True)
+        # Group by Associate ID
+        for assoc, group in visits_df.groupby('Associate ID'):
+            if pd.isna(assoc) or str(assoc).strip() == '':
+                continue
+                
+            # 1. Floor Visit (Sum of FloorsVisited)
+            floor_visit_sum = group['Num_Floors'].sum()
             
-        with chart_exec2:
-            st.markdown("##### Floors Visited vs. Sent to Client")
-            floor_data = pd.DataFrame({
-                'Category': ['Sent to Client', 'Internal / Pending'], 
-                'Floors': [client_reports_floors, max(0, total_floors_visited - client_reports_floors)]
+            # 2. Site Tower Visit (Count of Site Names)
+            site_tower_count = group['Site Name'].count() if 'Site Name' in group.columns else 0
+            
+            # 3. Report Mark (YES) -> count
+            report_yes_count = len(group[group['Clean_Report_Mark'].isin(['YES', 'Y', 'TRUE'])])
+            
+            # 4. Suggestion Visit (NO) -> count
+            report_no_count = len(group[group['Clean_Report_Mark'].isin(['NO', 'N', 'FALSE'])])
+            
+            # 5. Report Pending (From Status calculation)
+            report_pending = len(group[group['Status'] == 'Pending'])
+            
+            # 6. Report sent to the client (Is report visit? YES and sum FloorsVisited)
+            client_sent_floors = group[group['Clean_Report_Mark'].isin(['YES', 'Y', 'TRUE'])]['Num_Floors'].sum()
+            
+            # Append Row exactly matching the requested format
+            summary_rows.append({
+                'Associate ID': assoc,
+                'Floor Visit': int(floor_visit_sum),
+                'Site Tower visit': int(site_tower_count),
+                'Repoert Mark (YES)': report_yes_count,
+                'Suggestion Visit (NO)': report_no_count,
+                'Report Pending': report_pending,
+                'Repoert send to the client': int(client_sent_floors),
+                'March Month(Pending) Repoert send to the client': 0, # Placeholder for previous month
+                'report total with Pend': int(client_sent_floors)     # Summing current + previous
             })
-            fig_e2 = px.pie(floor_data, names='Category', values='Floors', hole=0.4, 
-                            color_discrete_sequence=['#8b5cf6', '#cbd5e1'])
-            st.plotly_chart(fig_e2, use_container_width=True)
+            
+        summary_df = pd.DataFrame(summary_rows)
+        
+        # Display the stylized dataframe
+        st.dataframe(
+            summary_df, 
+            use_container_width=True, 
+            hide_index=True,
+            column_config={
+                "Repoert send to the client": st.column_config.NumberColumn(
+                    "Repoert send to the client",
+                    help="Sum of floors where Is Report Visit is YES"
+                )
+            }
+        )
