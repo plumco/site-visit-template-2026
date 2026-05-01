@@ -1,94 +1,163 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
 import gspread
 from google.oauth2.service_account import Credentials
 
 # =========================================================
-# 1. PAGE CONFIG
+# PAGE SETUP
 # =========================================================
 st.set_page_config(
-    page_title="Site Visit Analytics Dashboard",
-    page_icon="📊",
+    page_title="Huliot Site Visit Dashboard",
+    page_icon="🏗️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
 # =========================================================
-# 2. CUSTOM CSS
+# MODERN FRONTEND CSS
 # =========================================================
 st.markdown("""
 <style>
-    .main {
-        background-color: #f8fafc;
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+    html, body, [class*="css"] {
+        font-family: 'Inter', sans-serif;
+    }
+
+    .stApp {
+        background: #f3f6fb;
     }
 
     .block-container {
-        padding-top: 1.2rem;
-        padding-bottom: 2rem;
+        padding-top: 1rem;
+        padding-left: 1.5rem;
+        padding-right: 1.5rem;
     }
 
-    .dashboard-title {
-        font-size: 2.1rem;
+    section[data-testid="stSidebar"] {
+        background: #0f172a;
+    }
+
+    section[data-testid="stSidebar"] * {
+        color: #f8fafc !important;
+    }
+
+    section[data-testid="stSidebar"] input,
+    section[data-testid="stSidebar"] textarea,
+    section[data-testid="stSidebar"] select,
+    section[data-testid="stSidebar"] div[data-baseweb="select"] * {
+        color: #0f172a !important;
+    }
+
+    .hero-box {
+        background: linear-gradient(135deg, #111827 0%, #1e3a8a 55%, #2563eb 100%);
+        border-radius: 24px;
+        padding: 28px 32px;
+        color: white;
+        box-shadow: 0 18px 45px rgba(15, 23, 42, 0.25);
+        margin-bottom: 22px;
+    }
+
+    .hero-title {
+        font-size: 34px;
         font-weight: 800;
-        color: #0f172a;
-        margin-bottom: 0rem;
+        margin-bottom: 6px;
+        letter-spacing: -0.5px;
     }
 
-    .dashboard-subtitle {
-        font-size: 0.95rem;
-        color: #64748b;
-        margin-bottom: 1.2rem;
+    .hero-subtitle {
+        font-size: 15px;
+        color: #dbeafe;
+    }
+
+    .status-pill {
+        display: inline-block;
+        padding: 7px 14px;
+        border-radius: 999px;
+        background: rgba(255,255,255,0.16);
+        color: #ffffff;
+        font-size: 13px;
+        font-weight: 600;
+        margin-top: 16px;
     }
 
     div[data-testid="metric-container"] {
-        background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
-        border: 1px solid #e2e8f0;
-        padding: 1rem;
-        border-radius: 16px;
-        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+        background: #ffffff;
+        border: 1px solid #e5e7eb;
+        padding: 20px 18px;
+        border-radius: 22px;
+        box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
     }
 
     div[data-testid="metric-container"] label {
-        color: #64748b;
-        font-size: 0.85rem;
+        color: #64748b !important;
+        font-size: 13px !important;
+        font-weight: 600 !important;
     }
 
-    div[data-testid="metric-container"] div[data-testid="stMetricValue"] {
-        color: #0f172a;
+    div[data-testid="stMetricValue"] {
+        color: #0f172a !important;
+        font-size: 30px !important;
+        font-weight: 800 !important;
+    }
+
+    .chart-card {
+        background: #ffffff;
+        border-radius: 22px;
+        border: 1px solid #e5e7eb;
+        padding: 18px;
+        box-shadow: 0 12px 28px rgba(15, 23, 42, 0.06);
+        margin-bottom: 18px;
+    }
+
+    .card-title {
+        font-size: 18px;
         font-weight: 800;
+        color: #111827;
+        margin-bottom: 2px;
     }
 
-    .section-card {
-        background-color: #ffffff;
-        border: 1px solid #e2e8f0;
-        border-radius: 18px;
-        padding: 1rem;
-        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
-        margin-bottom: 1rem;
-    }
-
-    .small-note {
+    .card-subtitle {
+        font-size: 13px;
         color: #64748b;
-        font-size: 0.85rem;
+        margin-bottom: 10px;
     }
 
     .stTabs [data-baseweb="tab-list"] {
-        gap: 10px;
+        gap: 12px;
+        margin-bottom: 16px;
     }
 
     .stTabs [data-baseweb="tab"] {
-        background-color: #ffffff;
-        border-radius: 12px;
-        border: 1px solid #e2e8f0;
-        padding: 10px 18px;
+        background: #ffffff;
+        border-radius: 14px;
+        border: 1px solid #e5e7eb;
+        padding: 10px 20px;
+        font-weight: 700;
+    }
+
+    .stDataFrame {
+        border-radius: 18px;
+        overflow: hidden;
+    }
+
+    .sidebar-title {
+        font-size: 22px;
+        font-weight: 800;
+        margin-bottom: 4px;
+    }
+
+    .sidebar-note {
+        font-size: 12px;
+        color: #cbd5e1 !important;
+        margin-bottom: 18px;
     }
 </style>
 """, unsafe_allow_html=True)
 
 # =========================================================
-# 3. GOOGLE SHEETS CONNECTION
+# GOOGLE SHEET CONNECTION
 # =========================================================
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1J1K31wLOepJMO6DPHySUGR43GpV2sV7PqSHetO_EFjo/edit?gid=502709304#gid=502709304"
 
@@ -107,39 +176,36 @@ def init_connection():
 client = init_connection()
 
 # =========================================================
-# 4. HELPER FUNCTIONS
+# HELPER FUNCTIONS
 # =========================================================
 def clean_headers(headers):
-    """Clean and de-duplicate Google Sheet headers."""
-    cleaned = []
     seen = {}
+    final_headers = []
 
-    for i, h in enumerate(headers):
-        h = str(h).strip()
-        if not h:
-            h = f"Unnamed_{i + 1}"
+    for i, header in enumerate(headers):
+        header = str(header).strip()
+        if not header:
+            header = f"Blank Column {i + 1}"
 
-        if h in seen:
-            seen[h] += 1
-            h = f"{h}_{seen[h]}"
+        if header in seen:
+            seen[header] += 1
+            header = f"{header}_{seen[header]}"
         else:
-            seen[h] = 0
+            seen[header] = 0
 
-        cleaned.append(h)
+        final_headers.append(header)
 
-    return cleaned
+    return final_headers
 
 
-def safe_col(df, possible_names):
-    """Return first matching column from possible names."""
-    for name in possible_names:
+def find_col(df, names):
+    for name in names:
         if name in df.columns:
             return name
     return None
 
 
-def unique_options(series):
-    """Create clean dropdown options."""
+def dropdown_values(series):
     values = (
         series.fillna("")
         .astype(str)
@@ -150,89 +216,84 @@ def unique_options(series):
     return ["All"] + values
 
 
-def apply_filter(df, column, selected_value):
-    if column and selected_value != "All":
-        return df[df[column].fillna("").astype(str).str.strip() == selected_value]
+def filter_df(df, col, value):
+    if col and value != "All":
+        return df[df[col].fillna("").astype(str).str.strip() == value]
     return df
 
 
-def get_visit_status(row):
+def visit_status(row):
     is_report = str(row.get("Is Report Visit?", "")).strip().lower()
-    submitted_date = str(row.get("Report Submitted Date", "")).strip()
+    submitted_date = str(row.get("Report Submitted Date", "")).strip().lower()
 
     if is_report in ["no", "false", "n/a", "na"]:
-        return "Technical (NA)"
+        return "Technical NA"
 
-    if submitted_date and submitted_date.lower() not in ["nan", "none", ""]:
+    if submitted_date and submitted_date not in ["nan", "none", ""]:
         return "Submitted"
 
     return "Pending"
 
 
-def calculate_floor_count(df):
-    floor_col = safe_col(df, ["FloorsVisited", "Floors Visited", "Floor Visited", "Floors"])
+def floor_total(df):
+    floor_col = find_col(df, ["FloorsVisited", "Floors Visited", "Floor Visited", "Floors"])
     if not floor_col:
         return 0
 
     total = 0
-    for val in df[floor_col]:
-        text = str(val).strip()
-        if not text or text.lower() in ["nan", "none"]:
+    for value in df[floor_col]:
+        value = str(value).strip()
+        if not value:
             continue
         try:
-            total += int(float(text))
+            total += int(float(value))
         except Exception:
             total += 1
     return total
 
 
-def make_bar(df, x, y, title, color="#6366f1"):
-    fig = px.bar(df, x=x, y=y, text=y)
-    fig.update_traces(marker_color=color, textposition="outside")
+def plotly_layout(fig, height=390):
     fig.update_layout(
-        title=title,
-        title_font_size=18,
-        height=390,
-        plot_bgcolor="white",
+        height=height,
         paper_bgcolor="white",
-        margin=dict(l=20, r=20, t=55, b=20),
-        xaxis_title="",
-        yaxis_title="",
-        font=dict(color="#334155")
+        plot_bgcolor="white",
+        font=dict(color="#334155", size=13),
+        margin=dict(l=20, r=20, t=20, b=20),
+        legend=dict(orientation="h", yanchor="bottom", y=-0.25, xanchor="center", x=0.5)
     )
     return fig
 
 
-def make_pie(df, names, values, title):
+def bar_chart(data, x, y, color="#2563eb"):
+    fig = px.bar(data, x=x, y=y, text=y)
+    fig.update_traces(marker_color=color, textposition="outside", hovertemplate="%{x}<br>%{y}<extra></extra>")
+    fig.update_layout(xaxis_title="", yaxis_title="")
+    return plotly_layout(fig)
+
+
+def pie_chart(data, names, values):
     fig = px.pie(
-        df,
+        data,
         names=names,
         values=values,
-        hole=0.55,
-        color_discrete_sequence=px.colors.qualitative.Set2
+        hole=0.62,
+        color_discrete_sequence=["#2563eb", "#f97316", "#10b981", "#ef4444", "#8b5cf6", "#06b6d4"]
     )
-    fig.update_layout(
-        title=title,
-        title_font_size=18,
-        height=390,
-        margin=dict(l=20, r=20, t=55, b=20),
-        paper_bgcolor="white",
-        legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5)
-    )
-    return fig
+    fig.update_traces(textposition="inside", textinfo="percent+label")
+    return plotly_layout(fig)
 
 # =========================================================
-# 5. LOAD DATA
+# LOAD GOOGLE SHEET DATA
 # =========================================================
-@st.cache_data(ttl=300, show_spinner="Loading live data from Google Sheets...")
+@st.cache_data(ttl=300, show_spinner="Loading dashboard data...")
 def load_data():
     try:
         spreadsheet = client.open_by_url(SHEET_URL)
-    except Exception as e:
-        st.error(f"Could not open Google Sheet. Please share the sheet with your service account email. Error: {e}")
+    except Exception as error:
+        st.error(f"Google Sheet opening error: {error}")
         return pd.DataFrame(), pd.DataFrame()
 
-    visit_dataframes = []
+    visit_frames = []
     master_df = pd.DataFrame()
 
     for ws in spreadsheet.worksheets():
@@ -253,263 +314,218 @@ def load_data():
             master_df = df.copy()
             continue
 
-        if any(skip in title for skip in ["setting", "config", "associate"]):
+        if any(x in title for x in ["setting", "config", "associate"]):
             continue
 
         if "Site Name" in df.columns or "Visit ID" in df.columns:
             df["Source Sheet"] = ws.title
-            visit_dataframes.append(df)
+            visit_frames.append(df)
 
-    visits_df = pd.concat(visit_dataframes, ignore_index=True) if visit_dataframes else pd.DataFrame()
+    visits_df = pd.concat(visit_frames, ignore_index=True) if visit_frames else pd.DataFrame()
     return visits_df, master_df
 
 visits_df, master_df = load_data()
 
 # =========================================================
-# 6. HEADER
+# HERO HEADER
 # =========================================================
-st.markdown('<p class="dashboard-title">📊 Site Visit Deep Analytics</p>', unsafe_allow_html=True)
-st.markdown('<p class="dashboard-subtitle">Interactive live dashboard connected with Google Sheets</p>', unsafe_allow_html=True)
-
-if st.button("🔄 Refresh Data"):
-    st.cache_data.clear()
-    st.rerun()
-
-# =========================================================
-# 7. TABS
-# =========================================================
-tab_visits, tab_master, tab_raw = st.tabs([
-    "📊 Visit Analytics",
-    "📈 Master Projects",
-    "🧾 Raw Data"
-])
+st.markdown("""
+<div class="hero-box">
+    <div class="hero-title">🏗️ Huliot Site Visit Dashboard</div>
+    <div class="hero-subtitle">Live analytics for site visits, pending reports, submitted reports, project status and team activity.</div>
+    <div class="status-pill">Google Sheets Live Sync • Auto Refresh Every 5 Minutes</div>
+</div>
+""", unsafe_allow_html=True)
 
 # =========================================================
-# TAB 1: VISIT ANALYTICS
+# SIDEBAR
 # =========================================================
-with tab_visits:
+with st.sidebar:
+    st.markdown('<div class="sidebar-title">Dashboard Filters</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sidebar-note">Use filters to check site-wise, person-wise and month-wise performance.</div>', unsafe_allow_html=True)
+
+    if st.button("🔄 Refresh Dashboard", use_container_width=True):
+        st.cache_data.clear()
+        st.rerun()
+
+# =========================================================
+# TABS
+# =========================================================
+tab1, tab2, tab3 = st.tabs(["📊 Visit Dashboard", "📈 Master Dashboard", "🧾 Data Table"])
+
+# =========================================================
+# VISIT DASHBOARD
+# =========================================================
+with tab1:
     if visits_df.empty:
-        st.warning("No visit log data found. Please check your sheet names and columns.")
+        st.warning("No visit data found.")
     else:
-        visits_df = visits_df.copy()
+        visits = visits_df.copy()
 
-        date_col = safe_col(visits_df, ["Date of Visit", "Visit Date", "Date"])
-        site_col = safe_col(visits_df, ["Site Name", "Project Name", "Site"])
-        assoc_col = safe_col(visits_df, ["Associate ID", "Associate", "Technical Person"])
-        tower_col = safe_col(visits_df, ["Tower Name", "Tower", "Building"])
+        site_col = find_col(visits, ["Site Name", "Project Name", "Site"])
+        date_col = find_col(visits, ["Date of Visit", "Visit Date", "Date"])
+        associate_col = find_col(visits, ["Associate ID", "Associate", "Technical Person", "Person Name"])
+        tower_col = find_col(visits, ["Tower Name", "Tower", "Building"])
 
-        visits_df["Status"] = visits_df.apply(get_visit_status, axis=1)
+        visits["Status"] = visits.apply(visit_status, axis=1)
 
         if date_col:
-            visits_df["Visit Date Clean"] = pd.to_datetime(visits_df[date_col], errors="coerce", dayfirst=True)
-            visits_df["Month"] = visits_df["Visit Date Clean"].dt.strftime("%b %Y")
-            visits_df["Month"] = visits_df["Month"].fillna("Unknown")
+            visits["Visit Date"] = pd.to_datetime(visits[date_col], errors="coerce", dayfirst=True)
+            visits["Month"] = visits["Visit Date"].dt.strftime("%b %Y").fillna("Unknown")
         else:
-            visits_df["Visit Date Clean"] = pd.NaT
-            visits_df["Month"] = "Unknown"
+            visits["Visit Date"] = pd.NaT
+            visits["Month"] = "Unknown"
 
-        # Sidebar filters
         with st.sidebar:
-            st.header("Visit Filters")
+            st.markdown("---")
+            st.subheader("Visit Filters")
+            search = st.text_input("Search Visit")
+            f_source = st.selectbox("Source Sheet", dropdown_values(visits["Source Sheet"]))
+            f_month = st.selectbox("Month", dropdown_values(visits["Month"]))
+            f_status = st.selectbox("Status", dropdown_values(visits["Status"]))
+            f_site = st.selectbox("Site", dropdown_values(visits[site_col])) if site_col else "All"
+            f_associate = st.selectbox("Associate", dropdown_values(visits[associate_col])) if associate_col else "All"
 
-            search_text = st.text_input("Search Site / Visit ID / Comment")
-            f_source = st.selectbox("Source Sheet", unique_options(visits_df["Source Sheet"]))
-            f_month = st.selectbox("Month", unique_options(visits_df["Month"]))
-            f_status = st.selectbox("Report Status", unique_options(visits_df["Status"]))
+        filtered = visits.copy()
+        filtered = filter_df(filtered, "Source Sheet", f_source)
+        filtered = filter_df(filtered, "Month", f_month)
+        filtered = filter_df(filtered, "Status", f_status)
+        filtered = filter_df(filtered, site_col, f_site)
+        filtered = filter_df(filtered, associate_col, f_associate)
 
-            f_assoc = "All"
-            if assoc_col:
-                f_assoc = st.selectbox("Associate", unique_options(visits_df[assoc_col]))
-
-            f_site = "All"
-            if site_col:
-                f_site = st.selectbox("Site Name", unique_options(visits_df[site_col]))
-
-            if date_col:
-                valid_dates = visits_df["Visit Date Clean"].dropna()
-                if not valid_dates.empty:
-                    min_date = valid_dates.min().date()
-                    max_date = valid_dates.max().date()
-                    date_range = st.date_input("Date Range", value=(min_date, max_date))
-                else:
-                    date_range = None
-            else:
-                date_range = None
-
-        filtered_v = visits_df.copy()
-        filtered_v = apply_filter(filtered_v, "Source Sheet", f_source)
-        filtered_v = apply_filter(filtered_v, "Month", f_month)
-        filtered_v = apply_filter(filtered_v, "Status", f_status)
-        filtered_v = apply_filter(filtered_v, assoc_col, f_assoc)
-        filtered_v = apply_filter(filtered_v, site_col, f_site)
-
-        if date_col and date_range and len(date_range) == 2:
-            start_date, end_date = date_range
-            filtered_v = filtered_v[
-                (filtered_v["Visit Date Clean"].dt.date >= start_date) &
-                (filtered_v["Visit Date Clean"].dt.date <= end_date)
-            ]
-
-        if search_text:
-            search_cols = [c for c in [site_col, "Visit ID", "Comment", tower_col] if c and c in filtered_v.columns]
+        if search:
+            search_cols = [c for c in [site_col, "Visit ID", "Comment", tower_col, associate_col] if c and c in filtered.columns]
             if search_cols:
-                mask = filtered_v[search_cols].astype(str).apply(
-                    lambda row: row.str.contains(search_text, case=False, na=False).any(),
-                    axis=1
+                mask = filtered[search_cols].astype(str).apply(
+                    lambda row: row.str.contains(search, case=False, na=False).any(), axis=1
                 )
-                filtered_v = filtered_v[mask]
+                filtered = filtered[mask]
 
-        # KPI cards
-        total_visits = len(filtered_v)
-        pending = len(filtered_v[filtered_v["Status"] == "Pending"])
-        submitted = len(filtered_v[filtered_v["Status"] == "Submitted"])
-        tech_na = len(filtered_v[filtered_v["Status"] == "Technical (NA)"])
-        total_floors = calculate_floor_count(filtered_v[filtered_v["Status"] == "Submitted"])
-        submission_rate = round((submitted / total_visits) * 100, 1) if total_visits else 0
+        total = len(filtered)
+        submitted = len(filtered[filtered["Status"] == "Submitted"])
+        pending = len(filtered[filtered["Status"] == "Pending"])
+        technical_na = len(filtered[filtered["Status"] == "Technical NA"])
+        floors = floor_total(filtered[filtered["Status"] == "Submitted"])
+        rate = round((submitted / total) * 100, 1) if total else 0
 
-        kpi1, kpi2, kpi3, kpi4, kpi5, kpi6 = st.columns(6)
-        kpi1.metric("Total Visits", total_visits)
-        kpi2.metric("Pending Reports", pending)
-        kpi3.metric("Submitted", submitted)
-        kpi4.metric("Technical NA", tech_na)
-        kpi5.metric("Submitted Floors", total_floors)
-        kpi6.metric("Submission Rate", f"{submission_rate}%")
+        a, b, c, d, e = st.columns(5)
+        a.metric("Total Visits", total)
+        b.metric("Submitted", submitted)
+        c.metric("Pending", pending)
+        d.metric("Technical NA", technical_na)
+        e.metric("Submit Rate", f"{rate}%")
+
+        f, g = st.columns([1, 1])
+        with f:
+            st.metric("Submitted Floors", floors)
+        with g:
+            unique_sites = filtered[site_col].nunique() if site_col else 0
+            st.metric("Active Sites", unique_sites)
 
         st.markdown("---")
 
-        # Charts row 1
-        c1, c2 = st.columns(2)
+        chart1, chart2 = st.columns(2)
+        with chart1:
+            st.markdown('<div class="chart-card"><div class="card-title">Monthly Visit Trend</div><div class="card-subtitle">Total visits grouped month-wise</div>', unsafe_allow_html=True)
+            month_data = filtered.groupby("Month").size().reset_index(name="Visits")
+            st.plotly_chart(bar_chart(month_data, "Month", "Visits", "#2563eb"), use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
 
-        with c1:
-            month_counts = (
-                filtered_v.groupby("Month", dropna=False)
-                .size()
-                .reset_index(name="Visits")
-            )
-            st.plotly_chart(
-                make_bar(month_counts, "Month", "Visits", "Visits Per Month", "#6366f1"),
-                use_container_width=True
-            )
+        with chart2:
+            st.markdown('<div class="chart-card"><div class="card-title">Report Status</div><div class="card-subtitle">Pending vs submitted vs technical NA</div>', unsafe_allow_html=True)
+            status_data = filtered["Status"].value_counts().reset_index()
+            status_data.columns = ["Status", "Count"]
+            st.plotly_chart(pie_chart(status_data, "Status", "Count"), use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
 
-        with c2:
-            status_counts = filtered_v["Status"].value_counts().reset_index()
-            status_counts.columns = ["Status", "Count"]
-            st.plotly_chart(
-                make_pie(status_counts, "Status", "Count", "Report Status Split"),
-                use_container_width=True
-            )
-
-        # Charts row 2
-        c3, c4 = st.columns(2)
-
-        with c3:
+        chart3, chart4 = st.columns(2)
+        with chart3:
+            st.markdown('<div class="chart-card"><div class="card-title">Top Sites</div><div class="card-subtitle">Most visited sites</div>', unsafe_allow_html=True)
             if site_col:
-                site_counts = filtered_v[site_col].value_counts().nlargest(10).reset_index()
-                site_counts.columns = ["Site Name", "Visits"]
-                st.plotly_chart(
-                    make_bar(site_counts, "Site Name", "Visits", "Top 10 Sites by Visits", "#14b8a6"),
-                    use_container_width=True
-                )
+                site_data = filtered[site_col].value_counts().head(10).reset_index()
+                site_data.columns = ["Site", "Visits"]
+                st.plotly_chart(bar_chart(site_data, "Site", "Visits", "#10b981"), use_container_width=True)
             else:
-                st.info("Site Name column not found.")
+                st.info("Site column missing.")
+            st.markdown('</div>', unsafe_allow_html=True)
 
-        with c4:
-            if assoc_col:
-                assoc_counts = filtered_v[assoc_col].value_counts().nlargest(10).reset_index()
-                assoc_counts.columns = ["Associate", "Visits"]
-                st.plotly_chart(
-                    make_bar(assoc_counts, "Associate", "Visits", "Visits by Associate", "#f59e0b"),
-                    use_container_width=True
-                )
+        with chart4:
+            st.markdown('<div class="chart-card"><div class="card-title">Associate Performance</div><div class="card-subtitle">Visit count by associate or technical person</div>', unsafe_allow_html=True)
+            if associate_col:
+                associate_data = filtered[associate_col].value_counts().head(10).reset_index()
+                associate_data.columns = ["Associate", "Visits"]
+                st.plotly_chart(bar_chart(associate_data, "Associate", "Visits", "#f97316"), use_container_width=True)
             else:
-                st.info("Associate column not found.")
+                st.info("Associate column missing.")
+            st.markdown('</div>', unsafe_allow_html=True)
 
-        # Records table
-        st.subheader("Visit Records")
-
-        preferred_cols = [
-            "Source Sheet",
-            "Visit ID",
-            site_col,
-            tower_col,
-            "FloorsVisited",
-            "Floors Visited",
-            assoc_col,
-            date_col,
-            "Status",
-            "Report Submitted Date",
-            "Comment"
+        st.subheader("Visit Details")
+        required_cols = [
+            "Source Sheet", "Visit ID", site_col, tower_col, associate_col,
+            date_col, "Status", "Report Submitted Date", "FloorsVisited", "Floors Visited", "Comment"
         ]
-        display_cols = []
-        for c in preferred_cols:
-            if c and c in filtered_v.columns and c not in display_cols:
-                display_cols.append(c)
+        show_cols = []
+        for col in required_cols:
+            if col and col in filtered.columns and col not in show_cols:
+                show_cols.append(col)
 
-        st.dataframe(
-            filtered_v[display_cols].astype(str) if display_cols else filtered_v.astype(str),
-            use_container_width=True,
-            hide_index=True
-        )
+        st.dataframe(filtered[show_cols].astype(str), use_container_width=True, hide_index=True)
 
-        csv = filtered_v.astype(str).to_csv(index=False).encode("utf-8")
         st.download_button(
-            "⬇️ Download Filtered Visit Data",
-            data=csv,
-            file_name="filtered_visit_data.csv",
-            mime="text/csv"
+            "⬇️ Download Visit Data",
+            filtered.astype(str).to_csv(index=False).encode("utf-8"),
+            "visit_dashboard_data.csv",
+            "text/csv",
+            use_container_width=True
         )
 
 # =========================================================
-# TAB 2: MASTER PROJECT ANALYTICS
+# MASTER DASHBOARD
 # =========================================================
-with tab_master:
+with tab2:
     if master_df.empty:
-        st.warning("No master project data found.")
+        st.warning("No master data found.")
     else:
-        master_df = master_df.copy()
+        master = master_df.copy()
 
-        col_state = safe_col(master_df, ["STATE", "State"])
-        col_dist = safe_col(master_df, ["DISTRICT / CITY", "DISTRICT", "District", "City"])
-        col_stat = safe_col(master_df, ["STATUS OF PROJECT", "Status", "STATUS"])
-        col_tech = safe_col(master_df, ["Technical Person", "TECHNICAL PERSON NAME", "TECHNICAL PERSON"])
-        col_sale = safe_col(master_df, ["Sells Person", "SALES PERSON NAME", "SALES PERSON", "Sales Person"])
-        col_distr = safe_col(master_df, ["Distributer", "DISTRIBUTOR NANE", "DISTRIBUTOR", "Distributor"])
-        col_ong = safe_col(master_df, ["VISIT ONGOING", "Visit Ongoing", "ONGOING"])
-        col_project = safe_col(master_df, ["PROJECT NAME", "Project Name", "SITE NAME", "Site Name"])
+        col_project = find_col(master, ["PROJECT NAME", "Project Name", "SITE NAME", "Site Name"])
+        col_state = find_col(master, ["STATE", "State"])
+        col_city = find_col(master, ["DISTRICT / CITY", "DISTRICT", "District", "City"])
+        col_status = find_col(master, ["STATUS OF PROJECT", "Status", "STATUS"])
+        col_tech = find_col(master, ["Technical Person", "TECHNICAL PERSON NAME", "TECHNICAL PERSON"])
+        col_sales = find_col(master, ["Sells Person", "SALES PERSON NAME", "SALES PERSON", "Sales Person"])
+        col_distributor = find_col(master, ["Distributer", "DISTRIBUTOR NANE", "DISTRIBUTOR", "Distributor"])
+        col_ongoing = find_col(master, ["VISIT ONGOING", "Visit Ongoing", "ONGOING"])
 
         with st.sidebar:
-            st.header("Master Filters")
-            master_search = st.text_input("Search Master Project")
+            st.markdown("---")
+            st.subheader("Master Filters")
+            m_search = st.text_input("Search Project")
+            m_state = st.selectbox("State", dropdown_values(master[col_state])) if col_state else "All"
+            m_city = st.selectbox("District / City", dropdown_values(master[col_city])) if col_city else "All"
+            m_status = st.selectbox("Project Status", dropdown_values(master[col_status])) if col_status else "All"
+            m_tech = st.selectbox("Technical Person", dropdown_values(master[col_tech])) if col_tech else "All"
+            m_sales = st.selectbox("Sales Person", dropdown_values(master[col_sales])) if col_sales else "All"
 
-            f_state = st.selectbox("Master State", unique_options(master_df[col_state])) if col_state else "All"
-            f_dist = st.selectbox("Master District", unique_options(master_df[col_dist])) if col_dist else "All"
-            f_stat = st.selectbox("Master Project Status", unique_options(master_df[col_stat])) if col_stat else "All"
-            f_tech = st.selectbox("Master Tech Person", unique_options(master_df[col_tech])) if col_tech else "All"
-            f_sale = st.selectbox("Master Sales Person", unique_options(master_df[col_sale])) if col_sale else "All"
-            f_distr = st.selectbox("Master Distributor", unique_options(master_df[col_distr])) if col_distr else "All"
+        m_filtered = master.copy()
+        m_filtered = filter_df(m_filtered, col_state, m_state)
+        m_filtered = filter_df(m_filtered, col_city, m_city)
+        m_filtered = filter_df(m_filtered, col_status, m_status)
+        m_filtered = filter_df(m_filtered, col_tech, m_tech)
+        m_filtered = filter_df(m_filtered, col_sales, m_sales)
 
-        filtered_m = master_df.copy()
-        filtered_m = apply_filter(filtered_m, col_state, f_state)
-        filtered_m = apply_filter(filtered_m, col_dist, f_dist)
-        filtered_m = apply_filter(filtered_m, col_stat, f_stat)
-        filtered_m = apply_filter(filtered_m, col_tech, f_tech)
-        filtered_m = apply_filter(filtered_m, col_sale, f_sale)
-        filtered_m = apply_filter(filtered_m, col_distr, f_distr)
-
-        if master_search:
-            mask = filtered_m.astype(str).apply(
-                lambda row: row.str.contains(master_search, case=False, na=False).any(),
-                axis=1
+        if m_search:
+            mask = m_filtered.astype(str).apply(
+                lambda row: row.str.contains(m_search, case=False, na=False).any(), axis=1
             )
-            filtered_m = filtered_m[mask]
+            m_filtered = m_filtered[mask]
 
-        total_projects = len(filtered_m)
+        total_projects = len(m_filtered)
         active_projects = 0
-        if col_ong:
+        if col_ongoing:
             active_projects = len(
-                filtered_m[
-                    filtered_m[col_ong]
-                    .fillna("")
+                m_filtered[
+                    m_filtered[col_ongoing]
                     .astype(str)
                     .str.lower()
                     .str.strip()
@@ -517,91 +533,75 @@ with tab_master:
                 ]
             )
 
-        unique_states = filtered_m[col_state].nunique() if col_state else 0
+        states = m_filtered[col_state].nunique() if col_state else 0
+        cities = m_filtered[col_city].nunique() if col_city else 0
 
-        team_names = set()
-        if col_tech:
-            team_names.update(filtered_m[col_tech].dropna().astype(str).str.strip().tolist())
-        if col_sale:
-            team_names.update(filtered_m[col_sale].dropna().astype(str).str.strip().tolist())
-        team_names = [x for x in team_names if x and x.lower() not in ["nan", "none"]]
-
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Total Projects", total_projects)
-        m2.metric("Active Visits", active_projects)
-        m3.metric("States Covered", unique_states)
-        m4.metric("Tech / Sales Team", len(team_names))
+        p1, p2, p3, p4 = st.columns(4)
+        p1.metric("Total Projects", total_projects)
+        p2.metric("Active Visits", active_projects)
+        p3.metric("States", states)
+        p4.metric("Cities", cities)
 
         st.markdown("---")
 
-        mc1, mc2 = st.columns(2)
-
-        with mc1:
+        m1, m2 = st.columns(2)
+        with m1:
+            st.markdown('<div class="chart-card"><div class="card-title">Projects by State</div><div class="card-subtitle">State-wise project distribution</div>', unsafe_allow_html=True)
             if col_state:
-                state_counts = filtered_m[col_state].value_counts().reset_index()
-                state_counts.columns = ["State", "Projects"]
-                st.plotly_chart(
-                    make_bar(state_counts, "State", "Projects", "Projects by State", "#14b8a6"),
-                    use_container_width=True
-                )
-            else:
-                st.info("State column not found.")
+                data = m_filtered[col_state].value_counts().reset_index()
+                data.columns = ["State", "Projects"]
+                st.plotly_chart(bar_chart(data, "State", "Projects", "#2563eb"), use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
 
-        with mc2:
-            if col_stat:
-                status_counts = filtered_m[col_stat].value_counts().reset_index()
-                status_counts.columns = ["Status", "Projects"]
-                st.plotly_chart(
-                    make_pie(status_counts, "Status", "Projects", "Project Status"),
-                    use_container_width=True
-                )
-            else:
-                st.info("Project status column not found.")
+        with m2:
+            st.markdown('<div class="chart-card"><div class="card-title">Project Status</div><div class="card-subtitle">Current project stage summary</div>', unsafe_allow_html=True)
+            if col_status:
+                data = m_filtered[col_status].value_counts().reset_index()
+                data.columns = ["Status", "Projects"]
+                st.plotly_chart(pie_chart(data, "Status", "Projects"), use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
 
-        mc3, mc4 = st.columns(2)
-
-        with mc3:
+        m3, m4 = st.columns(2)
+        with m3:
+            st.markdown('<div class="chart-card"><div class="card-title">Technical Person Load</div><div class="card-subtitle">Project allocation by technical person</div>', unsafe_allow_html=True)
             if col_tech:
-                tech_counts = filtered_m[col_tech].value_counts().nlargest(10).reset_index()
-                tech_counts.columns = ["Technical Person", "Projects"]
-                st.plotly_chart(
-                    make_bar(tech_counts, "Technical Person", "Projects", "Projects by Technical Person", "#6366f1"),
-                    use_container_width=True
-                )
+                data = m_filtered[col_tech].value_counts().head(10).reset_index()
+                data.columns = ["Technical Person", "Projects"]
+                st.plotly_chart(bar_chart(data, "Technical Person", "Projects", "#10b981"), use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
 
-        with mc4:
-            if col_sale:
-                sale_counts = filtered_m[col_sale].value_counts().nlargest(10).reset_index()
-                sale_counts.columns = ["Sales Person", "Projects"]
-                st.plotly_chart(
-                    make_bar(sale_counts, "Sales Person", "Projects", "Projects by Sales Person", "#f59e0b"),
-                    use_container_width=True
-                )
+        with m4:
+            st.markdown('<div class="chart-card"><div class="card-title">Sales Person Load</div><div class="card-subtitle">Project allocation by sales person</div>', unsafe_allow_html=True)
+            if col_sales:
+                data = m_filtered[col_sales].value_counts().head(10).reset_index()
+                data.columns = ["Sales Person", "Projects"]
+                st.plotly_chart(bar_chart(data, "Sales Person", "Projects", "#f97316"), use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
 
-        st.subheader("Master Projects Directory")
-        st.dataframe(filtered_m.astype(str), use_container_width=True, hide_index=True)
+        st.subheader("Master Project Directory")
+        st.dataframe(m_filtered.astype(str), use_container_width=True, hide_index=True)
 
-        csv_master = filtered_m.astype(str).to_csv(index=False).encode("utf-8")
         st.download_button(
-            "⬇️ Download Filtered Master Data",
-            data=csv_master,
-            file_name="filtered_master_project_data.csv",
-            mime="text/csv"
+            "⬇️ Download Master Data",
+            m_filtered.astype(str).to_csv(index=False).encode("utf-8"),
+            "master_project_dashboard_data.csv",
+            "text/csv",
+            use_container_width=True
         )
 
 # =========================================================
-# TAB 3: RAW DATA
+# DATA TABLE
 # =========================================================
-with tab_raw:
-    st.subheader("Raw Google Sheet Data Preview")
+with tab3:
+    st.subheader("Raw Data Preview")
 
-    raw_1, raw_2 = st.columns(2)
-    with raw_1:
-        st.markdown("#### Visit Data")
-        st.write(f"Rows: {len(visits_df)} | Columns: {len(visits_df.columns)}")
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("### Visit Data")
+        st.caption(f"Rows: {len(visits_df)} | Columns: {len(visits_df.columns)}")
         st.dataframe(visits_df.astype(str), use_container_width=True, hide_index=True)
 
-    with raw_2:
-        st.markdown("#### Master Data")
-        st.write(f"Rows: {len(master_df)} | Columns: {len(master_df.columns)}")
+    with c2:
+        st.markdown("### Master Data")
+        st.caption(f"Rows: {len(master_df)} | Columns: {len(master_df.columns)}")
         st.dataframe(master_df.astype(str), use_container_width=True, hide_index=True)
