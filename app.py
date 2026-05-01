@@ -91,6 +91,20 @@ def get_visit_status(row):
     if sub_date and sub_date.lower() not in ['nan', 'none', '']: return 'Submitted'
     return 'Pending'
 
+def parse_floor(val):
+    """
+    If the value is a number, return the number.
+    If the value is a name/text (can't be converted to number), consider it as 1.
+    """
+    val_str = str(val).strip()
+    if not val_str or val_str.lower() in ['nan', 'none']:
+        return 0
+    try:
+        return int(float(val_str))
+    except ValueError:
+        # If it throws an error (because it's a name or text), count it as 1
+        return 1
+
 # --- 5. UI Setup ---
 st.title("📊 Site Visit Deep Analytics")
 st.markdown("Live data synchronized directly from your Google Sheets.")
@@ -140,12 +154,10 @@ with tab_visits:
         tech_na = len(filtered_v[filtered_v['Status'] == 'Technical (NA)'])
         
         submitted_df = filtered_v[filtered_v['Status'] == 'Submitted']
-        total_floors = 0
-        for val in submitted_df.get('FloorsVisited', submitted_df.get('Floors Visited', [])):
-            try:
-                total_floors += int(float(val))
-            except:
-                pass
+        
+        # Calculate floors using the new parse_floor logic (Count names as 1)
+        floors_col_t1 = 'FloorsVisited' if 'FloorsVisited' in submitted_df.columns else 'Floors Visited'
+        total_floors = sum(parse_floor(val) for val in submitted_df.get(floors_col_t1, []))
 
         kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
         kpi1.metric("Total Visits", total_visits)
@@ -297,9 +309,9 @@ with tab_exec:
             if 'Status' not in exec_filtered_df.columns:
                 exec_filtered_df['Status'] = exec_filtered_df.apply(get_visit_status, axis=1)
 
-            # Ensure FloorsVisited is numeric for summing
+            # Apply the parse_floor logic (counts names/text as 1, converts numbers normally)
             floors_col = 'FloorsVisited' if 'FloorsVisited' in exec_filtered_df.columns else 'Floors Visited'
-            exec_filtered_df['Num_Floors'] = pd.to_numeric(exec_filtered_df.get(floors_col, []), errors='coerce').fillna(0)
+            exec_filtered_df['Num_Floors'] = exec_filtered_df.get(floors_col, pd.Series([], dtype=float)).apply(parse_floor)
             
             # Clean the "Is Report Visit?" column for accurate checking
             exec_filtered_df['Clean_Report_Mark'] = exec_filtered_df.get('Is Report Visit?', '').astype(str).str.strip().str.upper()
@@ -312,7 +324,7 @@ with tab_exec:
                 if pd.isna(assoc) or str(assoc).strip() == '':
                     continue
                     
-                # 1. Floor Visit (Sum of FloorsVisited)
+                # 1. Floor Visit (Sum of FloorsVisited handling texts as 1)
                 floor_visit_sum = group['Num_Floors'].sum()
                 
                 # 2. Site Tower Visit (Count of Site Names)
