@@ -101,7 +101,7 @@ def get_visit_status(row):
 st.title("📊 Site Visit Deep Analytics")
 st.markdown("Live data synchronized directly from your Google Sheets.")
 
-tab_visits, tab_master = st.tabs(["📊 Visit Analytics", "📈 Master Projects"])
+tab_visits, tab_master, tab_exec = st.tabs(["📊 Visit Analytics", "📈 Master Projects", "👔 Executive Dashboard"])
 
 # ==========================================
 # TAB 1: VISIT ANALYTICS
@@ -272,3 +272,78 @@ with tab_master:
         
         # BULLETPROOF FIX 3: Prevent Arrow crashes
         st.dataframe(filtered_m.astype(str), use_container_width=True)
+
+# ==========================================
+# TAB 3: EXECUTIVE DASHBOARD
+# ==========================================
+with tab_exec:
+    st.subheader("Executive Overview")
+    
+    if visits_df.empty:
+        st.warning("No Visit Log data found to build the dashboard.")
+    else:
+        # Helper to safely sum floors (accounting for string/dirty data)
+        def safe_sum_floors(series):
+            total = 0
+            for val in series:
+                try:
+                    total += int(float(val))
+                except:
+                    total += 1 if str(val).strip() else 0
+            return total
+
+        # Identify the correct floor column name
+        floors_col = 'FloorsVisited' if 'FloorsVisited' in visits_df.columns else 'Floors Visited'
+        
+        # --- CALCULATIONS ---
+        # 1. Floor visited consider - FloorsVisited sum
+        total_floors_visited = safe_sum_floors(visits_df.get(floors_col, []))
+        
+        # 2. Site Tower visit consider site name count
+        site_visits_count = visits_df['Site Name'].count() if 'Site Name' in visits_df.columns else 0
+        
+        # 3. Report Mark (YES and NO) considered Is Report Visit?
+        # Clean the column to lowercase to catch "Yes", "YES", "yes", etc.
+        report_status = visits_df.get('Is Report Visit?', pd.Series([''] * len(visits_df))).astype(str).str.strip().str.lower()
+        
+        report_yes_count = len(visits_df[report_status.isin(['yes', 'y', 'true'])])
+        report_no_count = len(visits_df[report_status.isin(['no', 'n', 'false', 'n/a'])])
+        
+        # 4. Report send to the client (Is report visit? Yes and count FloorsVisited)
+        yes_reports_df = visits_df[report_status.isin(['yes', 'y', 'true'])]
+        client_reports_floors = safe_sum_floors(yes_reports_df.get(floors_col, []))
+
+        # --- UI DISPLAY ---
+        st.markdown("##### Key Performance Indicators")
+        e_col1, e_col2, e_col3, e_col4, e_col5 = st.columns(5)
+        
+        e_col1.metric("Total Floors Visited", total_floors_visited)
+        e_col2.metric("Site/Tower Visits", site_visits_count)
+        e_col3.metric("Reports Marked: YES", report_yes_count)
+        e_col4.metric("Reports Marked: NO", report_no_count)
+        e_col5.metric("Client Reports (Floors)", client_reports_floors)
+
+        st.markdown("---")
+        
+        # Optional: Add charts to make it a true Executive Dashboard
+        chart_exec1, chart_exec2 = st.columns(2)
+        
+        with chart_exec1:
+            st.markdown("##### Report Marking Distribution")
+            report_data = pd.DataFrame({
+                'Status': ['YES', 'NO'], 
+                'Count': [report_yes_count, report_no_count]
+            })
+            fig_e1 = px.pie(report_data, names='Status', values='Count', hole=0.4, 
+                            color_discrete_sequence=['#14b8a6', '#f43f5e'])
+            st.plotly_chart(fig_e1, use_container_width=True)
+            
+        with chart_exec2:
+            st.markdown("##### Floors Visited vs. Sent to Client")
+            floor_data = pd.DataFrame({
+                'Category': ['Sent to Client', 'Internal / Pending'], 
+                'Floors': [client_reports_floors, max(0, total_floors_visited - client_reports_floors)]
+            })
+            fig_e2 = px.pie(floor_data, names='Category', values='Floors', hole=0.4, 
+                            color_discrete_sequence=['#8b5cf6', '#cbd5e1'])
+            st.plotly_chart(fig_e2, use_container_width=True)
