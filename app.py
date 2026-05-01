@@ -280,7 +280,6 @@ with tab_exec:
     if visits_df.empty:
         st.warning("No data available for Executive Dashboard.")
     else:
-        # Create Month Filter specifically for Executive View
         st.subheader("Multi-Month Associate Performance Tracking")
         all_months_exec = ['All Time'] + list(visits_df['Month'].astype(str).unique())
         selected_month = st.selectbox("Select Month", all_months_exec, key="exec_month_filter")
@@ -289,17 +288,14 @@ with tab_exec:
         if selected_month != 'All Time':
             df_exec = df_exec[df_exec['Month'] == selected_month]
 
-        # 1. Executive KPIs (Updated to 5 columns)
+        # 1. Executive KPIs
         tot_tower_visits = len(df_exec) 
         tot_site_visits = df_exec['Site Name'].nunique() if 'Site Name' in df_exec.columns else 0
         tot_sent = len(df_exec[df_exec['Status'] == 'Submitted'])
         tot_pending = len(df_exec[df_exec['Status'] == 'Pending'])
-        
-        # Calculate Submitted Floors specifically for this dashboard view
         exec_submitted_df = df_exec[df_exec['Status'] == 'Submitted']
         tot_floors_sent = calc_floors(exec_submitted_df.get('FloorsVisited', exec_submitted_df.get('Floors Visited', [])))
 
-        # 5 Columns now!
         e_kpi1, e_kpi2, e_kpi3, e_kpi4, e_kpi5 = st.columns(5)
         e_kpi1.metric("🏢 Total Tower Visits", tot_tower_visits)
         e_kpi2.metric("📍 Total Site Visits", tot_site_visits)
@@ -345,7 +341,7 @@ with tab_exec:
 
         st.markdown("---")
 
-        # 3. Associate Performance Tracking Table
+        # 3. CUSTOM STYLIZED HTML TABLE 
         st.markdown("##### Detailed Associate Performance Tracking")
         
         associate_stats = []
@@ -353,7 +349,6 @@ with tab_exec:
             floor_visits = calc_floors(group.get('FloorsVisited', group.get('Floors Visited', [])))
             site_visits = group['Site Name'].nunique() if 'Site Name' in group.columns else 0
             
-            # Count Yes/No for Is Report Visit?
             report_col = group.get('Is Report Visit?', pd.Series([''] * len(group))).astype(str).str.lower().str.strip()
             mark_yes = len(report_col[report_col.isin(['yes', 'y', 'true'])])
             sugg_no = len(report_col[report_col.isin(['no', 'n', 'false'])])
@@ -370,14 +365,14 @@ with tab_exec:
                 'Sugg (No)': sugg_no,
                 'Pending': pending,
                 'Sent': sent,
-                'Backlog': pending, # Assuming backlog is pending reports
+                'Backlog': pending, 
                 'Grand Total': grand_total
             })
 
         if associate_stats:
             perf_df = pd.DataFrame(associate_stats)
             
-            # Add a "Team Aggregate" Row at the bottom
+            # Add Team Aggregate Row
             total_row = pd.DataFrame([{
                 'Associate ID': 'TEAM AGGREGATE',
                 'Floor Visits': perf_df['Floor Visits'].sum(),
@@ -392,7 +387,62 @@ with tab_exec:
             
             perf_df = pd.concat([perf_df, total_row], ignore_index=True)
             
-            # Display DataFrame
-            st.dataframe(perf_df.astype(str), use_container_width=True)
+            # --- GENERATE CUSTOM HTML TABLE ---
+            html_table = """
+            <div style="background-color: #ffffff; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); margin-top: 10px; overflow-x: auto;">
+                <table style="width: 100%; border-collapse: collapse; text-align: center; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 14px; color: #334155;">
+                    <thead>
+                        <tr style="color: #94a3b8; font-size: 11px; text-transform: uppercase; border-bottom: 2px solid #f1f5f9; letter-spacing: 1px;">
+                            <th style="padding: 15px 10px; text-align: left;">Associate ID</th>
+                            <th style="padding: 15px 10px;">Floor Visits</th>
+                            <th style="padding: 15px 10px;">Site Visits</th>
+                            <th style="padding: 15px 10px;">Mark (Yes)</th>
+                            <th style="padding: 15px 10px;">Sugg (No)</th>
+                            <th style="padding: 15px 10px;">Pending</th>
+                            <th style="padding: 15px 10px;">Sent</th>
+                            <th style="padding: 15px 10px; color: #3b82f6;">Backlog</th>
+                            <th style="padding: 15px 10px;">Grand Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            """
+
+            for idx, row in perf_df.iterrows():
+                is_footer = row['Associate ID'] == 'TEAM AGGREGATE'
+                
+                if is_footer:
+                    # Dark navy footer row
+                    row_style = "background-color: #0f172a; color: #ffffff; font-weight: bold;"
+                    td_style = "padding: 18px 10px; border-bottom: none;"
+                else:
+                    # Standard row
+                    row_style = "border-bottom: 1px solid #f8fafc; font-weight: 700;"
+                    td_style = "padding: 18px 10px;"
+
+                html_table += f"<tr style='{row_style}'>"
+                html_table += f"<td style='{td_style} text-align: left; text-transform: uppercase;'>{row['Associate ID']}</td>"
+                html_table += f"<td style='{td_style} font-weight: {'bold' if is_footer else '500'}; color: {'#ffffff' if is_footer else '#64748b'};'>{row['Floor Visits']}</td>"
+                html_table += f"<td style='{td_style} font-weight: {'bold' if is_footer else '500'}; color: {'#ffffff' if is_footer else '#64748b'};'>{row['Site Visits']}</td>"
+                
+                # Colored Columns
+                html_table += f"<td style='{td_style} color: #10b981;'>{row['Mark (Yes)']}</td>" # Green
+                html_table += f"<td style='{td_style} color: #f43f5e;'>{row['Sugg (No)']}</td>" # Red
+                html_table += f"<td style='{td_style} color: #f59e0b;'>{row['Pending']}</td>"   # Orange
+                
+                html_table += f"<td style='{td_style} font-weight: {'bold' if is_footer else '500'}; color: {'#ffffff' if is_footer else '#64748b'};'>{row['Sent']}</td>"
+                html_table += f"<td style='{td_style} color: #3b82f6;'>{row['Backlog']}</td>"   # Blue
+                
+                html_table += f"<td style='{td_style} font-weight: 800; font-size: 16px; color: {'#3b82f6' if is_footer else '#0f172a'};'>{row['Grand Total']}</td>"
+                html_table += "</tr>"
+
+            html_table += """
+                    </tbody>
+                </table>
+            </div>
+            """
+            
+            # Render the HTML instead of the default dataframe
+            st.markdown(html_table, unsafe_allow_html=True)
+            
         else:
             st.info("No associate performance data available for this period.")
