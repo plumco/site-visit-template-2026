@@ -299,7 +299,6 @@ with tab_exec:
     with exec_col2:
         if not visits_df.empty:
             exec_months = ['All'] + list(visits_df['Month'].dropna().unique())
-            # FIX: Added unique key="exec_month_filter" here!
             selected_month = st.selectbox("Month", exec_months, label_visibility="collapsed", key="exec_month_filter")
         else:
             selected_month = 'All'
@@ -329,21 +328,28 @@ with tab_exec:
                 if pd.isna(assoc) or str(assoc).strip() == '':
                     continue
                     
+                # Floor visits and Site Visits
                 floor_visit_sum = group['Num_Floors'].sum()
                 site_tower_count = group['Site Name'].count() if 'Site Name' in group.columns else 0
-                report_yes_count = len(group[group['Clean_Report_Mark'].isin(['YES', 'Y', 'TRUE'])])
-                report_no_count = len(group[group['Clean_Report_Mark'].isin(['NO', 'N', 'FALSE'])])
+                
+                # --- FIXED: Summing Floors for YES and NO instead of counting rows ---
+                mask_yes = group['Clean_Report_Mark'].isin(['YES', 'Y', 'TRUE'])
+                mask_no = group['Clean_Report_Mark'].isin(['NO', 'N', 'FALSE'])
+                
+                report_yes_sum = group[mask_yes]['Num_Floors'].sum()
+                report_no_sum = group[mask_no]['Num_Floors'].sum()
+                
                 report_pending = len(group[group['Status'] == 'Pending'])
                 
-                yes_reports = group[group['Clean_Report_Mark'].isin(['YES', 'Y', 'TRUE'])]
-                client_sent_floors = yes_reports['Num_Floors'].sum()
+                # Client sent floors (based on YES marking)
+                client_sent_floors = group[mask_yes]['Num_Floors'].sum()
                 
                 summary_rows.append({
                     'Associate ID': assoc,
                     'Floor Visit': int(floor_visit_sum),
                     'Site Tower visit': int(site_tower_count),
-                    'Report Mark (YES)': report_yes_count,
-                    'Suggestion Visit (NO)': report_no_count,
+                    'Report Mark (YES)': int(report_yes_sum),
+                    'Suggestion Visit (NO)': int(report_no_sum),
                     'Report Pending': report_pending,
                     'Report sent to the client': int(client_sent_floors),
                     'March Month(Pending)': 0,
