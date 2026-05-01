@@ -52,10 +52,8 @@ def load_data():
         if not raw_data or len(raw_data) < 2:
             continue
             
-        # Extract headers
         raw_headers = [str(h).strip() for h in raw_data[0]] 
         
-        # Fix Duplicate Columns instantly
         seen = {}
         headers = []
         for h in raw_headers:
@@ -68,16 +66,13 @@ def load_data():
                 
         df = pd.DataFrame(raw_data[1:], columns=headers)
         
-        # Grab Master Sheet
         if 'master' in title:
             master_df = df
             continue
             
-        # Skip Config Sheets
         if any(skip in title for skip in ['setting', 'config', 'associate']):
             continue
             
-        # Process Visit Logs
         if not df.empty and ('Site Name' in df.columns or 'Visit ID' in df.columns):
             df['Source Sheet'] = ws.title
             visit_dataframes.append(df)
@@ -85,7 +80,6 @@ def load_data():
     visits_df = pd.concat(visit_dataframes, ignore_index=True) if visit_dataframes else pd.DataFrame()
     return visits_df, master_df
 
-# Load the data
 visits_df, master_df = load_data()
 
 # --- 4. Helper Functions ---
@@ -341,20 +335,28 @@ with tab_exec:
 
         st.markdown("---")
 
-        # 3. CUSTOM STYLIZED HTML TABLE 
+        # 3. PERFECTLY SYNCHRONIZED HTML TABLE 
         st.markdown("##### Detailed Associate Performance Tracking")
         
         associate_stats = []
         for assoc, group in df_exec.groupby('Associate ID'):
-            floor_visits = calc_floors(group.get('FloorsVisited', group.get('Floors Visited', [])))
+            # PERFECT FIX 1: Only calculate floors for SUBMITTED reports to match the KPI card
+            submitted_group = group[group['Status'] == 'Submitted']
+            floor_visits = calc_floors(submitted_group.get('FloorsVisited', submitted_group.get('Floors Visited', [])))
+            
             site_visits = group['Site Name'].nunique() if 'Site Name' in group.columns else 0
             
+            # PERFECT FIX 2: Mathematically balance Yes/No vs Grand Total
             report_col = group.get('Is Report Visit?', pd.Series([''] * len(group))).astype(str).str.lower().str.strip()
             mark_yes = len(report_col[report_col.isin(['yes', 'y', 'true'])])
-            sugg_no = len(report_col[report_col.isin(['no', 'n', 'false'])])
+            sugg_no = len(group) - mark_yes 
             
             pending = len(group[group['Status'] == 'Pending'])
             sent = len(group[group['Status'] == 'Submitted'])
+            
+            # PERFECT FIX 3: Backlog shows missing reports (Marked Yes, but not Sent or Pending)
+            backlog = max(0, mark_yes - sent - pending)
+            
             grand_total = len(group)
             
             associate_stats.append({
@@ -365,7 +367,7 @@ with tab_exec:
                 'Sugg (No)': sugg_no,
                 'Pending': pending,
                 'Sent': sent,
-                'Backlog': pending, 
+                'Backlog': backlog, 
                 'Grand Total': grand_total
             })
 
@@ -376,7 +378,8 @@ with tab_exec:
             total_row = pd.DataFrame([{
                 'Associate ID': 'TEAM AGGREGATE',
                 'Floor Visits': perf_df['Floor Visits'].sum(),
-                'Site Visits': perf_df['Site Visits'].sum(),
+                # PERFECT FIX 4: Team Aggregate uses true distinct count to match the 97 in the KPI card
+                'Site Visits': df_exec['Site Name'].nunique() if 'Site Name' in df_exec.columns else 0, 
                 'Mark (Yes)': perf_df['Mark (Yes)'].sum(),
                 'Sugg (No)': perf_df['Sugg (No)'].sum(),
                 'Pending': perf_df['Pending'].sum(),
@@ -411,11 +414,9 @@ with tab_exec:
                 is_footer = row['Associate ID'] == 'TEAM AGGREGATE'
                 
                 if is_footer:
-                    # Dark navy footer row
                     row_style = "background-color: #0f172a; color: #ffffff; font-weight: bold;"
                     td_style = "padding: 18px 10px; border-bottom: none;"
                 else:
-                    # Standard row
                     row_style = "border-bottom: 1px solid #f8fafc; font-weight: 700;"
                     td_style = "padding: 18px 10px;"
 
@@ -424,13 +425,12 @@ with tab_exec:
                 html_table += f"<td style='{td_style} font-weight: {'bold' if is_footer else '500'}; color: {'#ffffff' if is_footer else '#64748b'};'>{row['Floor Visits']}</td>"
                 html_table += f"<td style='{td_style} font-weight: {'bold' if is_footer else '500'}; color: {'#ffffff' if is_footer else '#64748b'};'>{row['Site Visits']}</td>"
                 
-                # Colored Columns
-                html_table += f"<td style='{td_style} color: #10b981;'>{row['Mark (Yes)']}</td>" # Green
-                html_table += f"<td style='{td_style} color: #f43f5e;'>{row['Sugg (No)']}</td>" # Red
-                html_table += f"<td style='{td_style} color: #f59e0b;'>{row['Pending']}</td>"   # Orange
+                html_table += f"<td style='{td_style} color: #10b981;'>{row['Mark (Yes)']}</td>" 
+                html_table += f"<td style='{td_style} color: #f43f5e;'>{row['Sugg (No)']}</td>" 
+                html_table += f"<td style='{td_style} color: #f59e0b;'>{row['Pending']}</td>"   
                 
                 html_table += f"<td style='{td_style} font-weight: {'bold' if is_footer else '500'}; color: {'#ffffff' if is_footer else '#64748b'};'>{row['Sent']}</td>"
-                html_table += f"<td style='{td_style} color: #3b82f6;'>{row['Backlog']}</td>"   # Blue
+                html_table += f"<td style='{td_style} color: #3b82f6;'>{row['Backlog']}</td>"   
                 
                 html_table += f"<td style='{td_style} font-weight: 800; font-size: 16px; color: {'#3b82f6' if is_footer else '#0f172a'};'>{row['Grand Total']}</td>"
                 html_table += "</tr>"
@@ -441,7 +441,6 @@ with tab_exec:
             </div>
             """
             
-            # Render the HTML instead of the default dataframe
             st.markdown(html_table, unsafe_allow_html=True)
             
         else:
