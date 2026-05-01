@@ -299,7 +299,8 @@ with tab_exec:
     with exec_col2:
         if not visits_df.empty:
             exec_months = ['All'] + list(visits_df['Month'].dropna().unique())
-            selected_month = st.selectbox("Month", exec_months, label_visibility="collapsed")
+            # FIX: Added unique key="exec_month_filter" here!
+            selected_month = st.selectbox("Month", exec_months, label_visibility="collapsed", key="exec_month_filter")
         else:
             selected_month = 'All'
 
