@@ -446,10 +446,3 @@ with tab_exec:
                         <div class="card-title">⏳ Critical Gaps</div>
                         <div class="card-value">{critical_gaps_str}</div>
                     </div>""", unsafe_allow_html=True)
-User clicks filter
-       ↓
-Streamlit reruns ENTIRE script top to bottom
-       ↓
-No key= on widget → Streamlit forgets widget state → resets position
-No key= on chart  → Streamlit treats it as NEW chart → re-renders/flickers
-No session_state  → load_data() called again → fresh fetch → slight data shift
