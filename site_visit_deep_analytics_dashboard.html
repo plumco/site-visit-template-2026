@@ -1,0 +1,235 @@
+
+<h2 class="sr-only">Site Visit Deep Analytics Dashboard — static mockup with sample field data for three tabs: Visit Analytics, Master Projects, Executive Dashboard.</h2>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font-sans)}
+.db-header{background:#1e293b;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;border-radius:var(--border-radius-lg) var(--border-radius-lg) 0 0}
+.db-title{color:#f1f5f9;font-size:15px;font-weight:500;letter-spacing:-.01em}
+.db-badge{background:#334155;color:#94a3b8;font-size:11px;padding:3px 8px;border-radius:4px}
+.tab-bar{background:#f8fafc;border-bottom:0.5px solid var(--color-border-tertiary);display:flex;gap:0;padding:0 20px}
+.tab-btn{font-size:13px;padding:10px 16px;border:none;background:none;cursor:pointer;color:var(--color-text-secondary);border-bottom:2px solid transparent;font-family:var(--font-sans);font-weight:400;transition:color .15s}
+.tab-btn.active{color:#6366f1;border-bottom-color:#6366f1;font-weight:500}
+.tab-content{display:none;padding:20px}
+.tab-content.active{display:block}
+.kpi-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:20px}
+.kpi-card{background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:14px 16px}
+.kpi-label{font-size:11px;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px}
+.kpi-value{font-size:22px;font-weight:500;color:var(--color-text-primary);font-family:var(--font-mono)}
+.kpi-delta{font-size:11px;color:#15803d;margin-top:3px}
+.filter-row{display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap}
+.filter-row select{font-size:12px;padding:6px 10px;border-radius:var(--border-radius-md);border:0.5px solid var(--color-border-secondary);background:var(--color-background-primary);color:var(--color-text-primary);font-family:var(--font-sans);cursor:pointer}
+.chart-row{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px}
+.chart-card{background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);padding:16px}
+.chart-label{font-size:13px;font-weight:500;color:var(--color-text-primary);margin-bottom:12px}
+.section-title{font-size:13px;font-weight:500;color:var(--color-text-primary);margin-bottom:10px}
+.data-table{width:100%;border-collapse:collapse;font-size:12px}
+.data-table th{text-align:left;padding:8px 10px;color:var(--color-text-secondary);font-weight:500;border-bottom:0.5px solid var(--color-border-tertiary);font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+.data-table td{padding:8px 10px;color:var(--color-text-primary);border-bottom:0.5px solid var(--color-border-tertiary)}
+.data-table tr:last-child td{border-bottom:none}
+.data-table tr.total-row td{font-weight:500;background:var(--color-background-secondary);color:var(--color-text-primary)}
+.status-pill{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:500}
+.pill-green{background:#dcfce7;color:#166534}
+.pill-amber{background:#fef9c3;color:#854d0e}
+.pill-blue{background:#dbeafe;color:#1e40af}
+.highlight-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:18px}
+.hl-card{padding:14px 16px;border-radius:var(--border-radius-lg);border:0.5px solid}
+.hl-blue{background:#eff6ff;border-color:#bfdbfe;color:#1d4ed8}
+.hl-green{background:#f0fdf4;border-color:#bbf7d0;color:#15803d}
+.hl-red{background:#fef2f2;border-color:#fecaca;color:#b91c1c}
+.hl-sub{font-size:11px;opacity:.75;margin-bottom:4px}
+.hl-val{font-size:13px;font-weight:500}
+.kpi-grid-4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}
+.divider{border:none;border-top:0.5px solid var(--color-border-tertiary);margin:18px 0}
+.exec-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+.exec-title{font-size:14px;font-weight:500;color:var(--color-text-primary)}
+.exec-sub{font-size:12px;color:var(--color-text-secondary);margin-top:2px}
+.month-select{font-size:12px;padding:5px 10px;border-radius:var(--border-radius-md);border:0.5px solid var(--color-border-secondary);background:var(--color-background-primary);color:var(--color-text-primary);font-family:var(--font-sans)}
+</style>
+
+<div style="border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);overflow:hidden;background:var(--color-background-tertiary)">
+  <div class="db-header">
+    <span class="db-title">Site Visit Deep Analytics</span>
+    <span class="db-badge">Live · Google Sheets sync</span>
+  </div>
+
+  <div class="tab-bar">
+    <button class="tab-btn active" onclick="switchTab('visits',this)">Visit Analytics</button>
+    <button class="tab-btn" onclick="switchTab('master',this)">Master Projects</button>
+    <button class="tab-btn" onclick="switchTab('exec',this)">Executive Dashboard</button>
+  </div>
+
+  <!-- TAB 1: VISIT ANALYTICS -->
+  <div id="tab-visits" class="tab-content active">
+    <div class="filter-row">
+      <select><option>All Sources</option><option>Pune</option><option>Mumbai</option><option>Ahmedabad</option></select>
+      <select><option>All Months</option><option>Apr 2025</option><option>Mar 2025</option><option>Feb 2025</option></select>
+      <select><option>All Statuses</option><option>Submitted</option><option>Pending</option><option>Technical (NA)</option></select>
+      <select><option>All Associates</option><option>A001</option><option>A002</option><option>A003</option><option>A004</option><option>A005</option></select>
+      <select><option>All Sites</option><option>Prestige Skyline</option><option>Godrej Woods</option><option>Lodha Aria</option></select>
+    </div>
+
+    <div class="kpi-grid">
+      <div class="kpi-card"><div class="kpi-label">Total Floor Visits</div><div class="kpi-value">847</div><div class="kpi-delta">+12% vs last month</div></div>
+      <div class="kpi-card"><div class="kpi-label">Pending Reports</div><div class="kpi-value" style="color:#b91c1c">12</div></div>
+      <div class="kpi-card"><div class="kpi-label">Technical (NA)</div><div class="kpi-value">234</div></div>
+      <div class="kpi-card"><div class="kpi-label">Submitted</div><div class="kpi-value" style="color:#15803d">28</div></div>
+      <div class="kpi-card"><div class="kpi-label">Submitted Floors</div><div class="kpi-value">613</div></div>
+    </div>
+
+    <div class="chart-row">
+      <div class="chart-card">
+        <div class="chart-label">Visits per month</div>
+        <div style="position:relative;height:200px"><canvas id="c1" role="img" aria-label="Bar chart of site visits per month Jan to Jun 2025"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-label">Top sites / zones</div>
+        <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;font-size:11px;color:var(--color-text-secondary)">
+          <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:#6366f1;display:inline-block"></span>Prestige Skyline 28%</span>
+          <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:#14b8a6;display:inline-block"></span>Godrej Woods 22%</span>
+          <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:#f59e0b;display:inline-block"></span>Lodha Aria 18%</span>
+          <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:#f43f5e;display:inline-block"></span>Brigade 16%</span>
+          <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:#8b5cf6;display:inline-block"></span>Others 16%</span>
+        </div>
+        <div style="position:relative;height:180px"><canvas id="c2" role="img" aria-label="Pie chart of top sites"></canvas></div>
+      </div>
+    </div>
+
+    <div class="section-title">Visit records</div>
+    <table class="data-table">
+      <thead><tr><th>Source</th><th>Visit ID</th><th>Site Name</th><th>Tower</th><th>Floors</th><th>Associate</th><th>Date</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td>Pune</td><td>V-0142</td><td>Prestige Skyline</td><td>T-2</td><td>14</td><td>A001</td><td>02 Apr 2025</td><td><span class="status-pill pill-green">Submitted</span></td></tr>
+        <tr><td>Mumbai</td><td>V-0143</td><td>Godrej Woods</td><td>T-1</td><td>18</td><td>A002</td><td>03 Apr 2025</td><td><span class="status-pill pill-amber">Pending</span></td></tr>
+        <tr><td>Pune</td><td>V-0144</td><td>Lodha Aria</td><td>T-3</td><td>22</td><td>A003</td><td>04 Apr 2025</td><td><span class="status-pill pill-blue">Technical (NA)</span></td></tr>
+        <tr><td>Ahmedabad</td><td>V-0145</td><td>Brigade Oasis</td><td>T-1</td><td>10</td><td>A004</td><td>05 Apr 2025</td><td><span class="status-pill pill-green">Submitted</span></td></tr>
+        <tr><td>Mumbai</td><td>V-0146</td><td>Prestige Skyline</td><td>T-4</td><td>16</td><td>A005</td><td>06 Apr 2025</td><td><span class="status-pill pill-amber">Pending</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- TAB 2: MASTER PROJECTS -->
+  <div id="tab-master" class="tab-content">
+    <div class="filter-row">
+      <select><option>All States</option><option>Maharashtra</option><option>Gujarat</option></select>
+      <select><option>All Districts</option><option>Pune</option><option>Mumbai</option><option>Ahmedabad</option></select>
+      <select><option>All Statuses</option><option>Active</option><option>Completed</option><option>On Hold</option></select>
+      <select><option>All Tech Persons</option><option>Ramesh</option><option>Suresh</option></select>
+      <select><option>All Sales Persons</option><option>Vikram</option><option>Anita</option></select>
+      <select><option>All Distributors</option><option>Shree Pipes</option><option>Jay Fittings</option></select>
+    </div>
+
+    <div class="kpi-grid-4">
+      <div class="kpi-card"><div class="kpi-label">Total Projects</div><div class="kpi-value">84</div></div>
+      <div class="kpi-card"><div class="kpi-label">Active (Ongoing)</div><div class="kpi-value" style="color:#15803d">31</div></div>
+      <div class="kpi-card"><div class="kpi-label">States Covered</div><div class="kpi-value">3</div></div>
+      <div class="kpi-card"><div class="kpi-label">Tech / Sales Teams</div><div class="kpi-value">8</div></div>
+    </div>
+
+    <div class="chart-row">
+      <div class="chart-card">
+        <div class="chart-label">Projects by state</div>
+        <div style="position:relative;height:200px"><canvas id="c3" role="img" aria-label="Bar chart projects by state"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-label">Project status breakdown</div>
+        <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;font-size:11px;color:var(--color-text-secondary)">
+          <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:#6366f1;display:inline-block"></span>Active 37%</span>
+          <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:#14b8a6;display:inline-block"></span>Completed 45%</span>
+          <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:#f59e0b;display:inline-block"></span>On Hold 18%</span>
+        </div>
+        <div style="position:relative;height:180px"><canvas id="c4" role="img" aria-label="Pie chart project status"></canvas></div>
+      </div>
+    </div>
+
+    <div class="section-title">Master project directory</div>
+    <table class="data-table">
+      <thead><tr><th>Project Name</th><th>State</th><th>District</th><th>Status</th><th>Tech Person</th><th>Sales Person</th><th>Distributor</th><th>Ongoing</th></tr></thead>
+      <tbody>
+        <tr><td>Prestige Skyline Phase 2</td><td>Maharashtra</td><td>Pune</td><td><span class="status-pill pill-green">Active</span></td><td>Ramesh</td><td>Vikram</td><td>Shree Pipes</td><td>Yes</td></tr>
+        <tr><td>Godrej Woods Tower</td><td>Maharashtra</td><td>Mumbai</td><td><span class="status-pill pill-green">Active</span></td><td>Suresh</td><td>Anita</td><td>Jay Fittings</td><td>Yes</td></tr>
+        <tr><td>Lodha Aria Block C</td><td>Maharashtra</td><td>Pune</td><td><span class="status-pill pill-blue">Completed</span></td><td>Ramesh</td><td>Vikram</td><td>Shree Pipes</td><td>No</td></tr>
+        <tr><td>Brigade Oasis</td><td>Gujarat</td><td>Ahmedabad</td><td><span class="status-pill pill-amber">On Hold</span></td><td>Suresh</td><td>Anita</td><td>Jay Fittings</td><td>No</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- TAB 3: EXECUTIVE DASHBOARD -->
+  <div id="tab-exec" class="tab-content">
+    <div class="exec-header">
+      <div>
+        <div class="exec-title">Executive Dashboard</div>
+        <div class="exec-sub">Multi-month associate performance tracking &amp; field analytics</div>
+      </div>
+      <select class="month-select"><option>All Months</option><option>Apr 2025</option><option>Mar 2025</option></select>
+    </div>
+
+    <div class="kpi-grid-4">
+      <div class="kpi-card"><div class="kpi-label">Total Floor Visits</div><div class="kpi-value">847</div></div>
+      <div class="kpi-card"><div class="kpi-label">Total Site Visits</div><div class="kpi-value">164</div></div>
+      <div class="kpi-card"><div class="kpi-label">Total Reports Sent</div><div class="kpi-value" style="color:#15803d">613</div></div>
+      <div class="kpi-card"><div class="kpi-label">Total Pending Reports</div><div class="kpi-value" style="color:#b91c1c">12</div></div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="chart-row">
+      <div class="chart-card">
+        <div class="chart-label">Reports sent to client</div>
+        <div style="position:relative;height:220px"><canvas id="c5" role="img" aria-label="Horizontal bar chart of reports sent per associate"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-label">Tower vs site visits breakdown</div>
+        <div style="display:flex;gap:12px;margin-bottom:8px;font-size:11px;color:var(--color-text-secondary)">
+          <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:#6366f1;display:inline-block"></span>Floor visit</span>
+          <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:#10b981;display:inline-block"></span>Site tower visit</span>
+        </div>
+        <div style="position:relative;height:210px"><canvas id="c6" role="img" aria-label="Grouped horizontal bar chart of floor visits vs site tower visits by associate"></canvas></div>
+      </div>
+    </div>
+
+    <div class="section-title" style="margin-bottom:10px">Detailed performance breakdown</div>
+    <table class="data-table">
+      <thead><tr><th>Associate</th><th>Floor Visit</th><th>Site Tower Visit</th><th>Report YES</th><th>Suggestion NO</th><th>Pending</th><th>Reports Sent</th><th>Total w/ Pend</th></tr></thead>
+      <tbody>
+        <tr><td>A001</td><td>198</td><td>38</td><td>198</td><td>42</td><td>2</td><td>198</td><td>200</td></tr>
+        <tr><td>A002</td><td>172</td><td>34</td><td>172</td><td>38</td><td>3</td><td>172</td><td>175</td></tr>
+        <tr><td>A003</td><td>185</td><td>36</td><td>185</td><td>40</td><td>4</td><td>185</td><td>189</td></tr>
+        <tr><td>A004</td><td>152</td><td>28</td><td>152</td><td>34</td><td>1</td><td>152</td><td>153</td></tr>
+        <tr><td>A005</td><td>140</td><td>28</td><td>106</td><td>28</td><td>2</td><td>106</td><td>108</td></tr>
+        <tr class="total-row"><td>TEAM TOTALS</td><td>847</td><td>164</td><td>813</td><td>182</td><td>12</td><td>813</td><td>825</td></tr>
+      </tbody>
+    </table>
+
+    <div class="highlight-row">
+      <div class="hl-card hl-blue"><div class="hl-sub">Highest coverage</div><div class="hl-val">A001 (38 Sites)</div></div>
+      <div class="hl-card hl-green"><div class="hl-sub">Highest productivity</div><div class="hl-val">A001 (198 Floors)</div></div>
+      <div class="hl-card hl-red"><div class="hl-sub">Critical gaps</div><div class="hl-val">All associates active</div></div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+function switchTab(id, btn) {
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + id).classList.add('active');
+  btn.classList.add('active');
+}
+
+const IND = '#6366f1', TEAL = '#14b8a6', AMB = '#f59e0b', ROSE = '#f43f5e', VIO = '#8b5cf6', GRN = '#10b981';
+const gridColor = 'rgba(148,163,184,0.2)', textColor = '#64748b';
+const baseOpts = { responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ x:{grid:{color:gridColor},ticks:{color:textColor,font:{size:11}}}, y:{grid:{color:gridColor},ticks:{color:textColor,font:{size:11}}} }};
+
+new Chart(document.getElementById('c1'), { type:'bar', data:{ labels:['Nov','Dec','Jan','Feb','Mar','Apr'], datasets:[{label:'Visits',data:[112,98,134,121,148,167],backgroundColor:IND,borderRadius:4}] }, options:{...baseOpts,plugins:{legend:{display:false}}} });
+
+new Chart(document.getElementById('c2'), { type:'doughnut', data:{ labels:['Prestige','Godrej Woods','Lodha Aria','Brigade','Others'], datasets:[{data:[28,22,18,16,16],backgroundColor:[IND,TEAL,AMB,ROSE,VIO],borderWidth:0,hoverOffset:4}] }, options:{ responsive:true, maintainAspectRatio:false, cutout:'55%', plugins:{legend:{display:false}} } });
+
+new Chart(document.getElementById('c3'), { type:'bar', data:{ labels:['Maharashtra','Gujarat','Karnataka'], datasets:[{label:'Projects',data:[58,18,8],backgroundColor:TEAL,borderRadius:4}] }, options:{...baseOpts,plugins:{legend:{display:false}}} });
+
+new Chart(document.getElementById('c4'), { type:'doughnut', data:{ labels:['Active','Completed','On Hold'], datasets:[{data:[37,45,18],backgroundColor:[IND,TEAL,AMB],borderWidth:0,hoverOffset:4}] }, options:{ responsive:true, maintainAspectRatio:false, cutout:'55%', plugins:{legend:{display:false}} } });
+
+new Chart(document.getElementById('c5'), { type:'bar', data:{ labels:['A005','A004','A002','A003','A001'], datasets:[{label:'Reports Sent',data:[106,152,172,185,198],backgroundColor:['#3b82f6','#3b82f6','#3b82f6','#3b82f6','#3b82f6'],borderRadius:4}] }, options:{ responsive:true, maintainAspectRatio:false, indexAxis:'y', plugins:{legend:{display:false}}, scales:{ x:{grid:{color:gridColor},ticks:{color:textColor,font:{size:11}}}, y:{grid:{color:'transparent'},ticks:{color:textColor,font:{size:11}}} } } });
+
+new Chart(document.getElementById('c6'), { type:'bar', data:{ labels:['A005','A004','A002','A003','A001'], datasets:[ {label:'Floor Visit',data:[140,152,172,185,198],backgroundColor:IND,borderRadius:3}, {label:'Site Tower Visit',data:[28,28,34,36,38],backgroundColor:GRN,borderRadius:3} ] }, options:{ responsive:true, maintainAspectRatio:false, indexAxis:'y', plugins:{legend:{display:false}}, scales:{ x:{grid:{color:gridColor},ticks:{color:textColor,font:{size:11}}}, y:{grid:{color:'transparent'},ticks:{color:textColor,font:{size:11}}} } } });
+</script>
