@@ -157,22 +157,24 @@ with tab_visits:
         if f_assoc != 'All': filtered_v = filtered_v[filtered_v['Associate ID'].astype(str) == f_assoc]
         if f_site != 'All': filtered_v = filtered_v[filtered_v['Site Name'].astype(str) == f_site]
 
-        total_visits = len(filtered_v)
-        pending = len(filtered_v[filtered_v['Status'] == 'Pending'])
-        submitted = len(filtered_v[filtered_v['Status'] == 'Submitted'])
-        tech_na = len(filtered_v[filtered_v['Status'] == 'Technical (NA)'])
+        # Convert Floors to Numbers properly for the entire filtered set
+        floors_col_t1 = 'FloorsVisited' if 'FloorsVisited' in filtered_v.columns else 'Floors Visited'
+        filtered_v['Num_Floors'] = filtered_v.get(floors_col_t1, pd.Series([], dtype=float)).apply(parse_floor)
+
+        # Calculate KPIs by summing FloorsVisited (instead of just counting rows)
+        total_visits_floors = int(filtered_v['Num_Floors'].sum())
+        pending_count = len(filtered_v[filtered_v['Status'] == 'Pending'])
+        submitted_count = len(filtered_v[filtered_v['Status'] == 'Submitted'])
         
-        submitted_df = filtered_v[filtered_v['Status'] == 'Submitted']
-        
-        floors_col_t1 = 'FloorsVisited' if 'FloorsVisited' in submitted_df.columns else 'Floors Visited'
-        total_floors = sum(parse_floor(val) for val in submitted_df.get(floors_col_t1, []))
+        tech_na_floors = int(filtered_v[filtered_v['Status'] == 'Technical (NA)']['Num_Floors'].sum())
+        submitted_floors_sum = int(filtered_v[filtered_v['Status'] == 'Submitted']['Num_Floors'].sum())
 
         kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
-        kpi1.metric("Total Visits", total_visits)
-        kpi2.metric("Pending Reports", pending)
-        kpi3.metric("Technical (NA)", tech_na)
-        kpi4.metric("Submitted", submitted)
-        kpi5.metric("Submitted Floors", total_floors)
+        kpi1.metric("Total Visits", total_visits_floors)
+        kpi2.metric("Pending Reports", pending_count)
+        kpi3.metric("Technical (NA)", tech_na_floors)
+        kpi4.metric("Submitted", submitted_count)
+        kpi5.metric("Submitted Floors", submitted_floors_sum)
 
         st.markdown("---")
 
@@ -332,7 +334,6 @@ with tab_exec:
                 floor_visit_sum = group['Num_Floors'].sum()
                 site_tower_count = group['Site Name'].count() if 'Site Name' in group.columns else 0
                 
-                # --- FIXED: Summing Floors for YES and NO instead of counting rows ---
                 mask_yes = group['Clean_Report_Mark'].isin(['YES', 'Y', 'TRUE'])
                 mask_no = group['Clean_Report_Mark'].isin(['NO', 'N', 'FALSE'])
                 
@@ -383,7 +384,6 @@ with tab_exec:
             with chart_col1:
                 st.markdown("#### 📊 Reports Sent to Client")
                 if not summary_df.empty:
-                    # Sort so biggest bars are on top
                     sorted_df1 = summary_df.sort_values(by='Report sent to the client', ascending=True)
                     fig_left = px.bar(
                         sorted_df1, 
@@ -422,7 +422,6 @@ with tab_exec:
             st.markdown("#### 📋 Detailed Performance Breakdown")
             
             if not summary_df.empty:
-                # Add TEAM TOTALS row at the bottom for a clean look
                 total_row = pd.DataFrame([{
                     'Associate ID': 'TEAM TOTALS',
                     'Floor Visit': total_floors,
@@ -436,7 +435,6 @@ with tab_exec:
                 }])
                 display_df = pd.concat([summary_df, total_row], ignore_index=True)
                 
-                # Show dataframe
                 st.dataframe(
                     display_df, 
                     use_container_width=True, 
@@ -444,7 +442,6 @@ with tab_exec:
                 )
                 
                 # --- BOTTOM HIGHLIGHT CARDS ---
-                # Calculate Highlights dynamically
                 highest_coverage_str = "None"
                 highest_prod_str = "None"
                 critical_gaps_str = "None"
@@ -456,7 +453,6 @@ with tab_exec:
                     idx_max_floor = summary_df['Floor Visit'].idxmax()
                     highest_prod_str = f"{summary_df.loc[idx_max_floor, 'Associate ID']} ({summary_df.loc[idx_max_floor, 'Floor Visit']} Floors)"
                     
-                    # Find associates with 0 sent reports
                     zero_sent_df = summary_df[summary_df['Report sent to the client'] == 0]
                     if not zero_sent_df.empty:
                         critical_gaps_str = ", ".join(zero_sent_df['Associate ID'].tolist()) + " (0 Sent)"
