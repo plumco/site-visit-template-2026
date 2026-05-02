@@ -161,13 +161,19 @@ with tab_visits:
         floors_col_t1 = 'FloorsVisited' if 'FloorsVisited' in filtered_v.columns else 'Floors Visited'
         filtered_v['Num_Floors'] = filtered_v.get(floors_col_t1, pd.Series([], dtype=float)).apply(parse_floor)
 
-        # Calculate KPIs by summing FloorsVisited (instead of just counting rows)
+        # Clean "Is Report Visit?" for accurate YES/NO checking
+        filtered_v['Clean_Report_Mark'] = filtered_v.get('Is Report Visit?', '').astype(str).str.strip().str.upper()
+
+        # Calculate KPIs
         total_visits_floors = int(filtered_v['Num_Floors'].sum())
         pending_count = len(filtered_v[filtered_v['Status'] == 'Pending'])
         submitted_count = len(filtered_v[filtered_v['Status'] == 'Submitted'])
         
         tech_na_floors = int(filtered_v[filtered_v['Status'] == 'Technical (NA)']['Num_Floors'].sum())
-        submitted_floors_sum = int(filtered_v[filtered_v['Status'] == 'Submitted']['Num_Floors'].sum())
+        
+        # FIXED: Submitted Floors now explicitly checks if Is Report Visit? is YES, and sums the floors
+        mask_yes_t1 = filtered_v['Clean_Report_Mark'].isin(['YES', 'Y', 'TRUE'])
+        submitted_floors_sum = int(filtered_v[mask_yes_t1]['Num_Floors'].sum())
 
         kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
         kpi1.metric("Total Visits", total_visits_floors)
