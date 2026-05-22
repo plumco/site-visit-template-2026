@@ -5,6 +5,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 from html import escape
 from datetime import datetime
+from textwrap import dedent
 
 # --- 1. Page Config & CSS ---
 st.set_page_config(layout="wide", page_title="Site Visit Deep Analytics", page_icon="📊")
@@ -1100,61 +1101,61 @@ with tab_site_card:
                 "Last Visit By": last_visit_by
             }])
 
-            st.markdown(f"""
-            <div class="site-report-card">
-                <div class="site-report-header">
-                    <div>
-                        <div class="site-report-title">{safe_text(selected_site)}</div>
-                        <div class="site-report-subtitle">
-                            Site Visit Report | MasterProject information above and VisitLog data below
-                        </div>
-                    </div>
-                    <div class="site-report-badge">Live Google Sheet Report</div>
-                </div>
-
-                <div class="report-section-title">1. Site Master Information</div>
-                {build_horizontal_table(master_row_for_report, master_cols_1)}
-                {build_horizontal_table(master_row_for_report, master_cols_2)}
-
-                <div class="report-section-title">2. Visit Summary</div>
-
-                <div class="kpi-strip">
-                    <div class="kpi-box">
-                        <div class="kpi-label">Visit Records</div>
-                        <div class="kpi-value">{total_visit_records}</div>
-                    </div>
-                    <div class="kpi-box">
-                        <div class="kpi-label">Floor Visits</div>
-                        <div class="kpi-value">{total_floor_visits}</div>
-                    </div>
-                    <div class="kpi-box">
-                        <div class="kpi-label">Submitted</div>
-                        <div class="kpi-value">{submitted_reports}</div>
-                    </div>
-                    <div class="kpi-box">
-                        <div class="kpi-label">Pending</div>
-                        <div class="kpi-value">{pending_reports}</div>
-                    </div>
-                    <div class="kpi-box">
-                        <div class="kpi-label">Technical NA</div>
-                        <div class="kpi-value">{technical_na}</div>
-                    </div>
-                    <div class="kpi-box">
-                        <div class="kpi-label">Towers</div>
-                        <div class="kpi-value">{total_towers}</div>
-                    </div>
-                </div>
-
-                <div class="report-section-title">3. Last Visit Comment</div>
-                <div class="last-comment-box">
-                    <b>Date:</b> {safe_text(last_visit_date)}
-                    &nbsp; | &nbsp;
-                    <b>Visited By:</b> {safe_text(last_visit_by)}
-                    <br><br>
-                    <b>Comment:</b> {safe_text(last_visit_comment)}
-                </div>
+            st.markdown(dedent(f"""
+<div class="site-report-card">
+    <div class="site-report-header">
+        <div>
+            <div class="site-report-title">{safe_text(selected_site)}</div>
+            <div class="site-report-subtitle">
+                Site Visit Report | MasterProject information above and VisitLog data below
             </div>
-            """, unsafe_allow_html=True)
+        </div>
+        <div class="site-report-badge">Live Google Sheet Report</div>
+    </div>
+
+    <div class="report-section-title">1. Site Master Information</div>
+    {build_horizontal_table(master_row_for_report, master_cols_1)}
+    {build_horizontal_table(master_row_for_report, master_cols_2)}
+
+    <div class="report-section-title">2. Visit Summary</div>
+
+    <div class="kpi-strip">
+        <div class="kpi-box">
+            <div class="kpi-label">Visit Records</div>
+            <div class="kpi-value">{total_visit_records}</div>
+        </div>
+        <div class="kpi-box">
+            <div class="kpi-label">Floor Visits</div>
+            <div class="kpi-value">{total_floor_visits}</div>
+        </div>
+        <div class="kpi-box">
+            <div class="kpi-label">Submitted</div>
+            <div class="kpi-value">{submitted_reports}</div>
+        </div>
+        <div class="kpi-box">
+            <div class="kpi-label">Pending</div>
+            <div class="kpi-value">{pending_reports}</div>
+        </div>
+        <div class="kpi-box">
+            <div class="kpi-label">Technical NA</div>
+            <div class="kpi-value">{technical_na}</div>
+        </div>
+        <div class="kpi-box">
+            <div class="kpi-label">Towers</div>
+            <div class="kpi-value">{total_towers}</div>
+        </div>
+    </div>
+
+    <div class="report-section-title">3. Last Visit Comment</div>
+    <div class="last-comment-box">
+        <b>Date:</b> {safe_text(last_visit_date)}
+        &nbsp; | &nbsp;
+        <b>Visited By:</b> {safe_text(last_visit_by)}
+        <br><br>
+        <b>Comment:</b> {safe_text(last_visit_comment)}
+    </div>
+</div>
+"""), unsafe_allow_html=True)
 
             st.markdown("### 📋 VisitLog Data")
 
