@@ -1211,7 +1211,7 @@ with tab_site_card:
                 last_visit_comment
             )
 
-            components.html(site_card_html, height=530, scrolling=True)
+            components.html(site_card_html, height=570, scrolling=True)
 
             st.markdown("### 📋 VisitLog Data")
 
