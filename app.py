@@ -8,7 +8,7 @@ from html import escape
 from datetime import datetime
 import streamlit.components.v1 as components
 
-# --- 1. FIREBASE SETUP ---
+# --- 1. FIREBASE CONFIG ---
 config = {
     "apiKey": st.secrets["firebase"]["apiKey"],
     "authDomain": st.secrets["firebase"]["authDomain"],
@@ -26,12 +26,15 @@ auth = firebase.auth()
 if 'user' not in st.session_state:
     st.session_state.user = None
 
-# --- 3. YOUR DASHBOARD LOGIC ---
+# --- 3. DASHBOARD FUNCTION ---
 def run_dashboard():
-    # --- PASTE YOUR DASHBOARD CODE HERE ---
-    # NOTE: You MUST include your st.set_page_config() and all your original functions
-    # (init_connection, load_data, helper functions, and all tab logic) inside this function.
-    st.write("DASHBOARD LOADED SUCCESSFULLY")
+    # ---------------------------------------------------------
+    # PASTE YOUR ORIGINAL DASHBOARD CODE HERE (Indented)
+    # ---------------------------------------------------------
+    # Ensure st.set_page_config(...) is the first line here
+    # Ensure all your Google Sheets/Plotly/Data logic is here
+    st.write("DASHBOARD CODE IS RUNNING")
+    # ---------------------------------------------------------
 
 # --- 4. LOGIN GATEKEEPER ---
 if not st.session_state.user:
@@ -47,9 +50,10 @@ if not st.session_state.user:
         except:
             st.error("Invalid email or password")
 else:
-    # --- RUN DASHBOARD IF AUTHENTICATED ---
+    # --- IF LOGGED IN, SHOW LOGOUT AND DASHBOARD ---
     if st.sidebar.button("Logout"):
         st.session_state.user = None
         st.rerun()
     
+    # This calls your dashboard logic
     run_dashboard()
