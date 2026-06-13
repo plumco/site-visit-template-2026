@@ -29,11 +29,19 @@ if 'user' not in st.session_state:
 # --- 3. DASHBOARD FUNCTION ---
 def run_dashboard():
     # ---------------------------------------------------------
-    # PASTE YOUR ORIGINAL DASHBOARD CODE HERE (Indented)
+    # PASTE YOUR ORIGINAL DASHBOARD CODE STARTING FROM HERE:
+    # (Do NOT include 'import' statements here, they are already at the top)
     # ---------------------------------------------------------
-    # Ensure st.set_page_config(...) is the first line here
-    # Ensure all your Google Sheets/Plotly/Data logic is here
-    st.write("DASHBOARD CODE IS RUNNING")
+    
+    # 1. Page Config (Remove if you have it in your original code)
+    # st.set_page_config(layout="wide", ...) 
+
+    # 2. Your Google Sheets & Data Loading Logic
+    # 3. All your tab logic (Tab 1, Tab 2, Tab 3, Tab 4)
+    # 4. All your layout, filters, and charts
+    
+    st.write("--- Your Dashboard will appear here after login ---")
+    
     # ---------------------------------------------------------
 
 # --- 4. LOGIN GATEKEEPER ---
@@ -50,10 +58,9 @@ if not st.session_state.user:
         except:
             st.error("Invalid email or password")
 else:
-    # --- IF LOGGED IN, SHOW LOGOUT AND DASHBOARD ---
+    # --- IF LOGGED IN ---
     if st.sidebar.button("Logout"):
         st.session_state.user = None
         st.rerun()
     
-    # This calls your dashboard logic
     run_dashboard()
