@@ -8,9 +8,7 @@ from html import escape
 from datetime import datetime
 import streamlit.components.v1 as components
 
-# --- 1. CONFIGURATION ---
-st.set_page_config(layout="wide", page_title="Site Visit Deep Analytics", page_icon="📊")
-
+# --- 1. FIREBASE CONFIG ---
 config = {
     "apiKey": st.secrets["firebase"]["apiKey"],
     "authDomain": st.secrets["firebase"]["authDomain"],
@@ -24,15 +22,49 @@ config = {
 firebase = pyrebase.initialize_app(config)
 auth = firebase.auth()
 
-# --- 2. SESSION STATE ---
+# --- 2. AUTHENTICATION STATE ---
 if 'user' not in st.session_state:
     st.session_state.user = None
 
-# --- 3. LOGIN PAGE ---
-def login_page():
+# --- 3. DASHBOARD FUNCTION (YOUR ORIGINAL CODE) ---
+def run_dashboard():
+    # Page Config
+    st.set_page_config(layout="wide", page_title="Site Visit Deep Analytics", page_icon="📊")
+
+    st.markdown("""
+    <style>
+        div[data-testid="metric-container"] { background-color: #ffffff; border: 1px solid #e2e8f0; padding: 1.5rem; border-radius: 1rem; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
+        .highlight-card { padding: 20px; border-radius: 12px; text-align: left; font-family: sans-serif; font-weight: bold; margin-top: 10px; }
+        .card-blue  { background-color: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
+        .card-green { background-color: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; }
+        .card-red   { background-color: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
+        .card-title { font-size: 0.9rem; margin-bottom: 5px; opacity: 0.8; }
+        .card-value { font-size: 1.2rem; }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # Google Sheets Connection
+    @st.cache_resource
+    def init_connection():
+        scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+        creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scopes)
+        return gspread.authorize(creds)
+
+    client = init_connection()
+    SHEET_URL = "https://docs.google.com/spreadsheets/d/1J1K31wLOepJMO6DPHySUGR43GpV2sV7PqSHetO_EFjo/edit?gid=502709304#gid=502709304"
+    
+    # ... Paste all your helper functions (safe_text, make_unique_headers, clean_df, etc.) here ...
+    # ... Paste all your Tabs, Filters, Charts and Download logic here ...
+    
+    st.title("📊 Site Visit Deep Analytics")
+    st.write("Welcome to your dashboard!")
+
+# --- 4. LOGIN GATEKEEPER ---
+if not st.session_state.user:
     st.title("🔐 Login to Site Visit Analytics")
     email = st.text_input("Email")
     password = st.text_input("Password", type="password")
+    
     if st.button("Login"):
         try:
             user = auth.sign_in_with_email_and_password(email, password)
@@ -40,23 +72,8 @@ def login_page():
             st.rerun()
         except:
             st.error("Invalid email or password")
-
-# --- 4. DASHBOARD (YOUR ORIGINAL CODE) ---
-def run_dashboard():
-    # Logout button
+else:
     if st.sidebar.button("Logout"):
         st.session_state.user = None
         st.rerun()
-
-    # Paste your original UI CSS here
-    st.markdown("""<style>...</style>""", unsafe_allow_html=True)
-
-    # Paste all your helper functions (init_connection, clean_df, etc.) here
-    # Paste all your Data Loading and Tab logic here
-    st.write("Your dashboard is loaded!")
-
-# --- 5. MAIN GATEKEEPER ---
-if st.session_state.user:
     run_dashboard()
-else:
-    login_page()
