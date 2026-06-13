@@ -26,55 +26,15 @@ auth = firebase.auth()
 if 'user' not in st.session_state:
     st.session_state.user = None
 
-# --- 3. DASHBOARD FUNCTION (YOUR ORIGINAL CODE) ---
+# --- 3. DASHBOARD FUNCTION ---
 def run_dashboard():
-    # Page Config
-    st.set_page_config(layout="wide", page_title="Site Visit Deep Analytics", page_icon="📊")
-
-    st.markdown("""
-    <style>
-        div[data-testid="metric-container"] { background-color: #ffffff; border: 1px solid #e2e8f0; padding: 1.5rem; border-radius: 1rem; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
-        .highlight-card { padding: 20px; border-radius: 12px; text-align: left; font-family: sans-serif; font-weight: bold; margin-top: 10px; }
-        .card-blue  { background-color: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
-        .card-green { background-color: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; }
-        .card-red   { background-color: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
-        .card-title { font-size: 0.9rem; margin-bottom: 5px; opacity: 0.8; }
-        .card-value { font-size: 1.2rem; }
-    </style>
-    """, unsafe_allow_html=True)
-
-    # Google Sheets Connection
-    @st.cache_resource
-    def init_connection():
-        scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-        creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scopes)
-        return gspread.authorize(creds)
-
-    client = init_connection()
-    SHEET_URL = "https://docs.google.com/spreadsheets/d/1J1K31wLOepJMO6DPHySUGR43GpV2sV7PqSHetO_EFjo/edit?gid=502709304#gid=502709304"
-
-    # Load Data and UI
-    @st.cache_data(ttl=600)
-    def load_data():
-        try:
-            spreadsheet = client.open_by_url(SHEET_URL)
-            worksheets = spreadsheet.worksheets()
-            visit_dataframes = []
-            master_df = pd.DataFrame()
-            for ws in worksheets:
-                raw_data = ws.get_all_values()
-                if not raw_data or len(raw_data) < 2: continue
-                df = pd.DataFrame(raw_data[1:], columns=raw_data[0])
-                if "master" in ws.title.lower(): master_df = df
-                else: visit_dataframes.append(df)
-            return pd.concat(visit_dataframes, ignore_index=True), master_df
-        except: return pd.DataFrame(), pd.DataFrame()
-
-    visits_df, master_df = load_data()
-    
+    # ---------------------------------------------------------
+    # PASTE YOUR ENTIRE ORIGINAL DASHBOARD CODE HERE
+    # ---------------------------------------------------------
     st.title("📊 Site Visit Deep Analytics")
-    st.write("Dashboard content is running...")
-    # ... Rest of your original tab/chart logic here ...
+    st.write("Your original dashboard charts and data tables go here.")
+    # Ensure all your original logic (sheets, tabs, plots) is indented here.
+    # ---------------------------------------------------------
 
 # --- 4. LOGIN GATEKEEPER ---
 if not st.session_state.user:
@@ -90,7 +50,10 @@ if not st.session_state.user:
         except:
             st.error("Invalid email or password")
 else:
+    # --- LOGOUT BUTTON ---
     if st.sidebar.button("Logout"):
         st.session_state.user = None
         st.rerun()
+    
+    # --- CALL YOUR DASHBOARD ---
     run_dashboard()
