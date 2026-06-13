@@ -29,11 +29,10 @@ if 'user' not in st.session_state:
 # --- 3. DASHBOARD FUNCTION ---
 def run_dashboard():
     # ---------------------------------------------------------
-    # PASTE YOUR ENTIRE ORIGINAL DASHBOARD CODE HERE
+    # PASTE ALL YOUR ORIGINAL CODE HERE. 
+    # MAKE SURE TO INDENT IT BY PRESSING THE TAB KEY ONCE.
     # ---------------------------------------------------------
-    st.title("📊 Site Visit Deep Analytics")
-    st.write("Your original dashboard charts and data tables go here.")
-    # Ensure all your original logic (sheets, tabs, plots) is indented here.
+    st.write("If you see this, your original code is not pasted here yet.")
     # ---------------------------------------------------------
 
 # --- 4. LOGIN GATEKEEPER ---
@@ -50,10 +49,7 @@ if not st.session_state.user:
         except:
             st.error("Invalid email or password")
 else:
-    # --- LOGOUT BUTTON ---
     if st.sidebar.button("Logout"):
         st.session_state.user = None
         st.rerun()
-    
-    # --- CALL YOUR DASHBOARD ---
     run_dashboard()
