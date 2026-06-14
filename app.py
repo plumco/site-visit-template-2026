@@ -36,11 +36,19 @@ st.markdown("""
     .card-red   { background-color: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
     .card-title { font-size: 0.9rem; margin-bottom: 5px; opacity: 0.8; }
     .card-value { font-size: 1.2rem; }
+
+    /* Hide Streamlit branding, footer, and Manage app menu */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    div[data-testid="manage-app-button"] {display: none;}
+    .stDeployButton {display: none;}
+    div[data-testid="stStatusWidget"] {display: none;}
 </style>
 """, unsafe_allow_html=True)
 
 # --- FIREBASE AUTHENTICATION ---
-FIREBASE_API_KEY = "AIzaSyDuf1MozrcpQmlnbJXa-bm5C2htxRzeZOA"
+FIREBASE_API_KEY = st.secrets["firebase"]["api_key"]
 
 def firebase_sign_in(email, password):
     """Authenticate user with Firebase Email/Password via REST API."""
