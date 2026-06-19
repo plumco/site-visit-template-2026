@@ -508,12 +508,12 @@ Rules:
         ],
         "generationConfig": {
             "temperature": 0.2,
-            "maxOutputTokens": 3000,
+            "maxOutputTokens": 8192,
             "responseMimeType": "application/json"
         }
     }
 
-    response = requests.post(url, headers=headers, json=payload, timeout=45)
+    response = requests.post(url, headers=headers, json=payload, timeout=60)
     data = response.json()
 
     if response.status_code != 200:
@@ -521,9 +521,17 @@ Rules:
         raise Exception(err_msg)
 
     try:
-        raw_text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+        candidate = data["candidates"][0]
+        raw_text = candidate["content"]["parts"][0]["text"].strip()
     except (KeyError, IndexError):
         raise Exception("Unexpected Gemini response format — no content returned.")
+
+    finish_reason = candidate.get("finishReason", "")
+    if finish_reason == "MAX_TOKENS":
+        raise Exception(
+            "Gemini response got cut off (too many comments at once). "
+            "Try scanning fewer comments — filter by Month or Associate first, then scan."
+        )
 
     # Strip markdown fences if model added them
     if raw_text.startswith("```"):
@@ -740,12 +748,19 @@ with tab_visits:
                         "comment":    str(row.get(comment_col_t1, "")).strip()
                     })
 
-                with st.spinner(f"Claude is analyzing {n_comments} comments..."):
+                with st.spinner(f"Gemini is analyzing {n_comments} comments..."):
                     try:
                         detected = analyze_comments_for_issues(comment_records)
                         st.session_state["analyzed_issues"] = detected
                         if not detected:
                             st.info("✅ No actionable issues detected in these comments.")
+                    except json.JSONDecodeError:
+                        st.error(
+                            "⚠️ Gemini returned incomplete/malformed JSON — usually means too many "
+                            "comments scanned at once. Filter by Month or Associate first to scan a "
+                            "smaller batch, then retry."
+                        )
+                        st.session_state["analyzed_issues"] = []
                     except ValueError as ve:
                         st.error(f"⚠️ {ve}\n\nAdd `gemini_api_key` to your Streamlit secrets.")
                         st.session_state["analyzed_issues"] = []
