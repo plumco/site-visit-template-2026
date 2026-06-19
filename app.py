@@ -12,6 +12,12 @@ import streamlit.components.v1 as components
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
+from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib import colors
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.graphics.shapes import Drawing
+from reportlab.graphics.charts.barcharts import VerticalBarChart
 
 # --- 1. Page Config & CSS ---
 st.set_page_config(layout="wide", page_title="Site Visit Deep Analytics", page_icon="📊")
@@ -428,6 +434,158 @@ def add_issue_to_sheet(row_data):
     except Exception as e:
         st.error(f"Failed to save issue: {e}")
         return False
+
+
+def update_issue_in_sheet(issue_id, new_status, resolution_notes):
+    try:
+        spreadsheet = client.open_by_url(SHEET_URL)
+        ws = spreadsheet.worksheet(ISSUES_SHEET_NAME)
+        raw = ws.get_all_values()
+        if not raw:
+            return False
+        headers = raw[0]
+        try:
+            id_col_i   = headers.index("Issue ID")
+            status_ci  = headers.index("Status") + 1
+            notes_ci   = headers.index("Resolution Notes") + 1
+            updated_ci = headers.index("Updated At") + 1
+        except ValueError:
+            return False
+        for row_num, row in enumerate(raw[1:], start=2):
+            if len(row) > id_col_i and row[id_col_i] == issue_id:
+                ws.update_cell(row_num, status_ci, new_status)
+                ws.update_cell(row_num, notes_ci, resolution_notes)
+                ws.update_cell(row_num, updated_ci, datetime.now().strftime("%d-%m-%Y %H:%M"))
+                st.cache_data.clear()
+                return True
+        return False
+    except Exception as e:
+        st.error(f"Failed to update issue: {e}")
+        return False
+
+
+def build_executive_pdf(display_df, total_floors, total_sites, total_sent, total_pending,
+                         selected_month, highest_coverage_str, highest_prod_str, critical_gaps_str,
+                         summary_df):
+    """
+    Builds a print-ready PDF of the Executive Dashboard for monthly review meetings.
+    Returns bytes.
+    """
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer, pagesize=landscape(A4),
+        leftMargin=24, rightMargin=24, topMargin=24, bottomMargin=24
+    )
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle("TitleStyle", parent=styles["Title"], fontSize=18, textColor=colors.HexColor("#111827"))
+    sub_style = ParagraphStyle("SubStyle", parent=styles["Normal"], fontSize=10, textColor=colors.HexColor("#4b5563"))
+    h_style = ParagraphStyle("HStyle", parent=styles["Heading3"], fontSize=12, textColor=colors.HexColor("#111827"), spaceBefore=10, spaceAfter=6)
+
+    elements = []
+    elements.append(Paragraph("Huliot West Zone - Executive Dashboard Report", title_style))
+    elements.append(Paragraph(f"Month: {selected_month}  |  Generated: {datetime.now().strftime('%d-%m-%Y %H:%M')}", sub_style))
+    elements.append(Spacer(1, 14))
+
+    # --- KPI strip ---
+    kpi_data = [
+        ["Total Floor Visits", "Total Site Visits", "Total Reports Sent", "Total Pending Reports"],
+        [str(total_floors), str(total_sites), str(total_sent), str(total_pending)]
+    ]
+    kpi_table = Table(kpi_data, colWidths=[180, 180, 180, 180])
+    kpi_table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#111827")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTSIZE", (0, 0), (-1, 0), 10),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 1), (-1, 1), 18),
+        ("FONTNAME", (0, 1), (-1, 1), "Helvetica-Bold"),
+        ("BACKGROUND", (0, 1), (-1, 1), colors.HexColor("#F9FAFB")),
+        ("TEXTCOLOR", (0, 1), (-1, 1), colors.HexColor("#111827")),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#D1D5DB")),
+        ("TOPPADDING", (0, 0), (-1, -1), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+    ]))
+    elements.append(kpi_table)
+    elements.append(Spacer(1, 16))
+
+    # --- Native bar chart: Reports Sent per Associate ---
+    if not summary_df.empty:
+        elements.append(Paragraph("Reports Sent to Client - by Associate", h_style))
+        chart_data = summary_df.sort_values("Report sent to the client", ascending=False)
+        cats = [str(x)[:14] for x in chart_data["Associate ID"].tolist()]
+        vals = [float(x) for x in chart_data["Report sent to the client"].tolist()]
+
+        drawing = Drawing(700, 200)
+        bc = VerticalBarChart()
+        bc.x = 50
+        bc.y = 40
+        bc.height = 140
+        bc.width = 600
+        bc.data = [vals]
+        bc.categoryAxis.categoryNames = cats
+        bc.categoryAxis.labels.angle = 30
+        bc.categoryAxis.labels.fontSize = 7
+        bc.categoryAxis.labels.dx = -8
+        bc.categoryAxis.labels.dy = -10
+        bc.valueAxis.valueMin = 0
+        bc.bars[0].fillColor = colors.HexColor("#3b82f6")
+        drawing.add(bc)
+        elements.append(drawing)
+        elements.append(Spacer(1, 10))
+
+    # --- Detailed performance table ---
+    elements.append(Paragraph("Detailed Performance Breakdown", h_style))
+    table_cols = [c for c in [
+        "Associate ID", "Floor Visit", "Site Tower visit", "Report Mark (YES)",
+        "Suggestion Visit (NO)", "Report Pending", "Report sent to the client"
+    ] if c in display_df.columns]
+
+    table_data = [table_cols]
+    for _, row in display_df[table_cols].astype(str).iterrows():
+        table_data.append(list(row))
+
+    perf_table = Table(table_data, repeatRows=1, colWidths=[110] + [85] * (len(table_cols) - 1))
+    table_style_cmds = [
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#111827")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ("ALIGN", (1, 0), (-1, -1), "CENTER"),
+        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#D1D5DB")),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+    ]
+    last_row_idx = len(table_data) - 1
+    table_style_cmds.append(("BACKGROUND", (0, last_row_idx), (-1, last_row_idx), colors.HexColor("#F3F4F6")))
+    table_style_cmds.append(("FONTNAME", (0, last_row_idx), (-1, last_row_idx), "Helvetica-Bold"))
+    perf_table.setStyle(TableStyle(table_style_cmds))
+    elements.append(perf_table)
+    elements.append(Spacer(1, 16))
+
+    # --- Highlights ---
+    elements.append(Paragraph("Highlights", h_style))
+    highlight_data = [
+        ["Highest Coverage", highest_coverage_str],
+        ["Highest Productivity", highest_prod_str],
+        ["Critical Gaps", critical_gaps_str],
+    ]
+    hl_table = Table(highlight_data, colWidths=[160, 600])
+    hl_table.setStyle(TableStyle([
+        ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#D1D5DB")),
+        ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#F9FAFB")),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+    ]))
+    elements.append(hl_table)
+
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer.getvalue()
 
 
 def build_scanned_issues_excel(result_df):
@@ -1182,25 +1340,46 @@ with tab_exec:
             kpi_col4.metric("TOTAL PENDING REPORTS", total_pending)
             st.markdown("---")
 
+            if "exec_reset_ctr" not in st.session_state:
+                st.session_state["exec_reset_ctr"] = 0
+            ctr = st.session_state["exec_reset_ctr"]
+            selected_associate = None
+
             chart_col1, chart_col2 = st.columns(2)
             with chart_col1:
                 st.markdown("#### 📊 Reports Sent to Client")
+                st.caption("👆 Click a bar to filter the table below — Power BI style")
                 if not summary_df.empty:
                     sorted_df1 = summary_df.sort_values(by="Report sent to the client", ascending=True)
                     fig_left = px.bar(sorted_df1, x="Report sent to the client", y="Associate ID",
                         orientation="h", text="Report sent to the client", color_discrete_sequence=["#3b82f6"])
                     fig_left.update_traces(textposition="outside")
                     fig_left.update_layout(xaxis_title="", yaxis_title="", showlegend=False, margin=dict(l=0, r=0, t=30, b=0))
-                    st.plotly_chart(fig_left, use_container_width=True, key="chart_t3_reports")
+                    event_left = st.plotly_chart(
+                        fig_left, use_container_width=True, key=f"chart_t3_reports_{ctr}",
+                        on_select="rerun", selection_mode="points"
+                    )
+                    if event_left and event_left.get("selection", {}).get("points"):
+                        pts = event_left["selection"]["points"]
+                        if pts:
+                            selected_associate = pts[0].get("y")
             with chart_col2:
                 st.markdown("#### 🏢 Tower vs Site Visits Breakdown")
+                st.caption("👆 Click a bar to filter the table below — Power BI style")
                 if not summary_df.empty:
                     df_melted = summary_df.melt(id_vars="Associate ID", value_vars=["Floor Visit", "Site Tower visit"],
                         var_name="Visit Type", value_name="Count")
                     fig_right = px.bar(df_melted, x="Count", y="Associate ID", color="Visit Type", barmode="group",
                         orientation="h", color_discrete_map={"Floor Visit": "#6366f1", "Site Tower visit": "#10b981"})
                     fig_right.update_layout(xaxis_title="", yaxis_title="", legend_title="", margin=dict(l=0, r=0, t=30, b=0))
-                    st.plotly_chart(fig_right, use_container_width=True, key="chart_t3_breakdown")
+                    event_right = st.plotly_chart(
+                        fig_right, use_container_width=True, key=f"chart_t3_breakdown_{ctr}",
+                        on_select="rerun", selection_mode="points"
+                    )
+                    if not selected_associate and event_right and event_right.get("selection", {}).get("points"):
+                        pts = event_right["selection"]["points"]
+                        if pts:
+                            selected_associate = pts[0].get("y")
 
             st.markdown("#### 📋 Detailed Performance Breakdown")
             if not summary_df.empty:
@@ -1212,7 +1391,22 @@ with tab_exec:
                     "March Month(Pending)": 0, "Report total with Pend": summary_df["Report total with Pend"].sum()
                 }])
                 display_df = pd.concat([summary_df, total_row], ignore_index=True)
-                st.dataframe(display_df, use_container_width=True, hide_index=True)
+
+                if selected_associate:
+                    fcol1, fcol2 = st.columns([5, 1])
+                    with fcol1:
+                        st.info(f"🔎 Filtered by click: **{selected_associate}**")
+                    with fcol2:
+                        if st.button("✖ Clear Filter", key="clear_exec_filter", use_container_width=True):
+                            st.session_state["exec_reset_ctr"] += 1
+                            st.rerun()
+                    table_to_show = display_df[display_df["Associate ID"] == selected_associate]
+                    if table_to_show.empty:
+                        table_to_show = display_df
+                else:
+                    table_to_show = display_df
+
+                st.dataframe(table_to_show, use_container_width=True, hide_index=True)
 
                 highest_coverage_str = highest_prod_str = critical_gaps_str = "None"
                 if len(summary_df) > 0:
@@ -1230,6 +1424,24 @@ with tab_exec:
                     st.markdown(f'<div class="highlight-card card-green"><div class="card-title">🚀 Highest Productivity</div><div class="card-value">{highest_prod_str}</div></div>', unsafe_allow_html=True)
                 with h_col3:
                     st.markdown(f'<div class="highlight-card card-red"><div class="card-title">⏳ Critical Gaps</div><div class="card-value">{critical_gaps_str}</div></div>', unsafe_allow_html=True)
+
+                st.markdown("---")
+                pdf_col1, pdf_col2 = st.columns([1, 3])
+                with pdf_col1:
+                    pdf_bytes = build_executive_pdf(
+                        display_df, total_floors, total_sites, total_sent, total_pending,
+                        selected_month, highest_coverage_str, highest_prod_str, critical_gaps_str,
+                        summary_df
+                    )
+                    st.download_button(
+                        "📄 Download PDF Report",
+                        data=pdf_bytes,
+                        file_name=f"Executive_Dashboard_{selected_month.replace(' ', '_')}_{datetime.now().strftime('%d%m%Y')}.pdf",
+                        mime="application/pdf",
+                        key="dl_exec_pdf"
+                    )
+                with pdf_col2:
+                    st.caption("Print-ready PDF — KPIs, chart, full breakdown table, highlights. Ready for monthly review meeting.")
 
 # ==========================================
 # TAB 4: SITE REPORT CARD
