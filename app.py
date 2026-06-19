@@ -4,10 +4,14 @@ import plotly.express as px
 import gspread
 import requests
 import json
+import io
 from google.oauth2.service_account import Credentials
 from html import escape
 from datetime import datetime
 import streamlit.components.v1 as components
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
 
 # --- 1. Page Config & CSS ---
 st.set_page_config(layout="wide", page_title="Site Visit Deep Analytics", page_icon="📊")
@@ -452,6 +456,105 @@ def update_issue_in_sheet(issue_id, new_status, resolution_notes):
     except Exception as e:
         st.error(f"Failed to update issue: {e}")
         return False
+
+
+def build_issues_excel(issues_df):
+    """
+    Builds a color-coded Excel report of issues.
+    Resolved/Closed = green row, Open = red row, In Progress = yellow row.
+    Returns bytes.
+    """
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Site Issues"
+
+    cols = [c for c in [
+        "Issue ID", "Site Name", "Issue Type", "Severity", "Description",
+        "Status", "Raised By", "Raised Date", "Assigned To", "Target Date",
+        "Resolution Notes", "Created At", "Updated At"
+    ] if c in issues_df.columns]
+
+    # --- Header row ---
+    header_fill = PatternFill(start_color="111827", end_color="111827", fill_type="solid")
+    header_font = Font(color="FFFFFF", bold=True, size=11)
+    thin_border = Border(
+        left=Side(style="thin", color="D1D5DB"), right=Side(style="thin", color="D1D5DB"),
+        top=Side(style="thin", color="D1D5DB"), bottom=Side(style="thin", color="D1D5DB")
+    )
+
+    for ci, col_name in enumerate(cols, start=1):
+        cell = ws.cell(row=1, column=ci, value=col_name)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="left", vertical="center")
+        cell.border = thin_border
+
+    # --- Status color map ---
+    status_fill_map = {
+        "Open":        PatternFill(start_color="FEE2E2", end_color="FEE2E2", fill_type="solid"),  # red
+        "In Progress": PatternFill(start_color="FEF3C7", end_color="FEF3C7", fill_type="solid"),  # yellow
+        "Resolved":    PatternFill(start_color="DCFCE7", end_color="DCFCE7", fill_type="solid"),  # green
+        "Closed":      PatternFill(start_color="E5E7EB", end_color="E5E7EB", fill_type="solid"),  # grey
+    }
+    status_font_map = {
+        "Open":        Font(color="B91C1C", bold=True),
+        "In Progress": Font(color="92400E", bold=True),
+        "Resolved":    Font(color="15803D", bold=True),
+        "Closed":      Font(color="374151", bold=True),
+    }
+
+    # --- Data rows ---
+    for ri, (_, row) in enumerate(issues_df[cols].astype(str).iterrows(), start=2):
+        status_val = row.get("Status", "").strip()
+        row_fill = status_fill_map.get(status_val, None)
+
+        for ci, col_name in enumerate(cols, start=1):
+            val = row[col_name]
+            cell = ws.cell(row=ri, column=ci, value=val)
+            cell.border = thin_border
+            cell.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
+            if row_fill:
+                cell.fill = row_fill
+            if col_name == "Status" and status_val in status_font_map:
+                cell.font = status_font_map[status_val]
+
+    # --- Column widths ---
+    width_map = {
+        "Issue ID": 10, "Site Name": 22, "Issue Type": 20, "Severity": 10,
+        "Description": 40, "Status": 14, "Raised By": 16, "Raised Date": 12,
+        "Assigned To": 16, "Target Date": 12, "Resolution Notes": 35,
+        "Created At": 16, "Updated At": 16
+    }
+    for ci, col_name in enumerate(cols, start=1):
+        ws.column_dimensions[get_column_letter(ci)].width = width_map.get(col_name, 16)
+
+    ws.freeze_panes = "A2"
+    ws.row_dimensions[1].height = 22
+
+    # --- Summary sheet ---
+    ws2 = wb.create_sheet("Summary")
+    ws2.cell(row=1, column=1, value="Status").font = Font(bold=True)
+    ws2.cell(row=1, column=2, value="Count").font = Font(bold=True)
+    if "Status" in issues_df.columns:
+        status_counts = issues_df["Status"].value_counts()
+        for i, (status_name, count_val) in enumerate(status_counts.items(), start=2):
+            ws2.cell(row=i, column=1, value=status_name)
+            ws2.cell(row=i, column=2, value=int(count_val))
+            fill = status_fill_map.get(status_name)
+            if fill:
+                ws2.cell(row=i, column=1).fill = fill
+                ws2.cell(row=i, column=2).fill = fill
+    ws2.column_dimensions["A"].width = 18
+    ws2.column_dimensions["B"].width = 12
+    ws2.cell(row=1, column=1).fill = header_fill
+    ws2.cell(row=1, column=1).font = header_font
+    ws2.cell(row=1, column=2).fill = header_fill
+    ws2.cell(row=1, column=2).font = header_font
+
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    return buffer.getvalue()
 
 
 # ==========================================
@@ -1290,6 +1393,20 @@ with tab_issues:
 
             st.dataframe(filtered_issues[log_cols].astype(str), use_container_width=True, hide_index=True)
             st.markdown(f"*Showing {len(filtered_issues)} of {len(issues_df)} total issues*")
+
+            # ── Excel Download — color coded by status ──
+            dl1, dl2 = st.columns([1, 3])
+            with dl1:
+                excel_bytes = build_issues_excel(filtered_issues)
+                st.download_button(
+                    "📥 Download Excel (Color-Coded)",
+                    data=excel_bytes,
+                    file_name=f"Site_Issues_{datetime.now().strftime('%d%m%Y')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="dl_issues_excel"
+                )
+            with dl2:
+                st.caption("🟢 Resolved &nbsp;&nbsp; 🟡 In Progress &nbsp;&nbsp; 🔴 Open &nbsp;&nbsp; ⚪ Closed — rows color-coded by status, plus Summary tab with counts.")
 
             st.markdown("---")
 
