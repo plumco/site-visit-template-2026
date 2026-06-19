@@ -463,11 +463,11 @@ def analyze_comments_for_issues(comment_records):
     comment_records: list of dicts with keys:
       site_name, date, associate, comment
     Returns: list of issue dicts
-    Requires st.secrets["anthropic_api_key"]
+    Requires st.secrets["gemini_api_key"]
     """
-    api_key = st.secrets.get("anthropic_api_key", "")
+    api_key = st.secrets.get("gemini_api_key", "")
     if not api_key:
-        raise ValueError("anthropic_api_key not found in Streamlit secrets.")
+        raise ValueError("gemini_api_key not found in Streamlit secrets.")
 
     # Filter out empty comments
     valid = [r for r in comment_records if str(r.get("comment", "")).strip() not in ["", "-", "nan", "None"]]
@@ -500,25 +500,31 @@ Rules:
 - Low = minor observation / cosmetic
 - Return ONLY valid JSON array, no other text, no markdown fences."""
 
-    url = "https://api.anthropic.com/v1/messages"
-    headers = {
-        "x-api-key": api_key,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json"
-    }
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+    headers = {"content-type": "application/json"}
     payload = {
-        "model": "claude-sonnet-4-6",
-        "max_tokens": 3000,
-        "messages": [{"role": "user", "content": prompt}]
+        "contents": [
+            {"parts": [{"text": prompt}]}
+        ],
+        "generationConfig": {
+            "temperature": 0.2,
+            "maxOutputTokens": 3000,
+            "responseMimeType": "application/json"
+        }
     }
 
     response = requests.post(url, headers=headers, json=payload, timeout=45)
     data = response.json()
 
     if response.status_code != 200:
-        raise Exception(data.get("error", {}).get("message", "Anthropic API error"))
+        err_msg = data.get("error", {}).get("message", "Gemini API error")
+        raise Exception(err_msg)
 
-    raw_text = data["content"][0]["text"].strip()
+    try:
+        raw_text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+    except (KeyError, IndexError):
+        raise Exception("Unexpected Gemini response format — no content returned.")
+
     # Strip markdown fences if model added them
     if raw_text.startswith("```"):
         raw_text = raw_text.split("```")[1]
@@ -741,7 +747,7 @@ with tab_visits:
                         if not detected:
                             st.info("✅ No actionable issues detected in these comments.")
                     except ValueError as ve:
-                        st.error(f"⚠️ {ve}\n\nAdd `anthropic_api_key` to your Streamlit secrets.")
+                        st.error(f"⚠️ {ve}\n\nAdd `gemini_api_key` to your Streamlit secrets.")
                         st.session_state["analyzed_issues"] = []
                     except Exception as ex:
                         st.error(f"Analysis failed: {ex}")
