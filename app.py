@@ -430,7 +430,81 @@ def add_issue_to_sheet(row_data):
         return False
 
 
-def update_issue_in_sheet(issue_id, new_status, resolution_notes):
+def build_scanned_issues_excel(result_df):
+    """
+    Builds a color-coded Excel for AI-scanned (not-yet-saved) issues.
+    Color by Severity since these aren't in tracker yet (no Status).
+    result_df expects columns: site_name, issue_type, severity, description, raised_by, raised_date
+    """
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "AI Detected Issues"
+
+    col_map = [
+        ("site_name", "Site Name"),
+        ("issue_type", "Issue Type"),
+        ("severity", "Severity"),
+        ("description", "Description"),
+        ("raised_by", "Raised By"),
+        ("raised_date", "Date"),
+    ]
+    cols = [c for c, _ in col_map if c in result_df.columns]
+    headers_disp = [lbl for c, lbl in col_map if c in result_df.columns]
+
+    header_fill = PatternFill(start_color="111827", end_color="111827", fill_type="solid")
+    header_font = Font(color="FFFFFF", bold=True, size=11)
+    thin_border = Border(
+        left=Side(style="thin", color="D1D5DB"), right=Side(style="thin", color="D1D5DB"),
+        top=Side(style="thin", color="D1D5DB"), bottom=Side(style="thin", color="D1D5DB")
+    )
+
+    for ci, label in enumerate(headers_disp, start=1):
+        cell = ws.cell(row=1, column=ci, value=label)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="left", vertical="center")
+        cell.border = thin_border
+
+    sev_fill_map = {
+        "High":   PatternFill(start_color="FEE2E2", end_color="FEE2E2", fill_type="solid"),
+        "Medium": PatternFill(start_color="FEF3C7", end_color="FEF3C7", fill_type="solid"),
+        "Low":    PatternFill(start_color="DCFCE7", end_color="DCFCE7", fill_type="solid"),
+    }
+    sev_font_map = {
+        "High":   Font(color="B91C1C", bold=True),
+        "Medium": Font(color="92400E", bold=True),
+        "Low":    Font(color="15803D", bold=True),
+    }
+
+    for ri, (_, row) in enumerate(result_df[cols].astype(str).iterrows(), start=2):
+        sev_val = row.get("severity", "").strip()
+        row_fill = sev_fill_map.get(sev_val, None)
+        for ci, col_name in enumerate(cols, start=1):
+            cell = ws.cell(row=ri, column=ci, value=row[col_name])
+            cell.border = thin_border
+            cell.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
+            if row_fill:
+                cell.fill = row_fill
+            if col_name == "severity" and sev_val in sev_font_map:
+                cell.font = sev_font_map[sev_val]
+
+    width_map = {
+        "Site Name": 22, "Issue Type": 20, "Severity": 10,
+        "Description": 45, "Raised By": 16, "Date": 12
+    }
+    for ci, label in enumerate(headers_disp, start=1):
+        ws.column_dimensions[get_column_letter(ci)].width = width_map.get(label, 16)
+
+    ws.freeze_panes = "A2"
+    ws.row_dimensions[1].height = 22
+
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
+
     try:
         spreadsheet = client.open_by_url(SHEET_URL)
         ws = spreadsheet.worksheet(ISSUES_SHEET_NAME)
@@ -901,6 +975,20 @@ with tab_visits:
 
                 selected_rows = edited_df[edited_df["Add?"] == True]
                 n_selected = len(selected_rows)
+
+                # ── Excel download for scanned results (send to team) ──
+                dlx1, dlx2 = st.columns([1, 3])
+                with dlx1:
+                    scan_excel_bytes = build_scanned_issues_excel(edited_df.drop(columns=["Add?"]))
+                    st.download_button(
+                        "📥 Download Excel (Send to Team)",
+                        data=scan_excel_bytes,
+                        file_name=f"AI_Detected_Issues_{datetime.now().strftime('%d%m%Y')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key="dl_scanned_excel"
+                    )
+                with dlx2:
+                    st.caption("🔴 High &nbsp;&nbsp; 🟡 Medium &nbsp;&nbsp; 🟢 Low — color-coded by severity. Share via WhatsApp/Email before or after adding to tracker.")
 
                 if n_selected > 0:
                     if st.button(
