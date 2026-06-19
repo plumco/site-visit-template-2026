@@ -6,3 +6,4 @@ google-auth
 pyrebase4
 PyYAML
 requests
+openpyxl
