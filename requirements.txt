@@ -7,3 +7,4 @@ pyrebase4
 PyYAML
 requests
 openpyxl
+reportlab
