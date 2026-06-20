@@ -206,6 +206,32 @@ st.markdown("""
         border: 1px solid rgba(56,189,248,0.15);
     }
 
+    /* ===== Scrollbars — glass cyan style (Chrome/Edge/Safari + Firefox) ===== */
+    div[data-testid="stDataFrame"] *, .stApp {
+        scrollbar-width: thin;
+        scrollbar-color: rgba(56,189,248,0.45) rgba(255,255,255,0.05);
+    }
+    ::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+    }
+    ::-webkit-scrollbar-track {
+        background: rgba(255,255,255,0.04);
+        border-radius: 8px;
+    }
+    ::-webkit-scrollbar-thumb {
+        background-color: rgba(56,189,248,0.40);
+        border-radius: 8px;
+        border: 2px solid transparent;
+        background-clip: padding-box;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+        background-color: rgba(56,189,248,0.65);
+    }
+    ::-webkit-scrollbar-corner {
+        background: transparent;
+    }
+
     /* ===== Bordered containers (chart/table glass panels) ===== */
     div[data-testid="stVerticalBlockBorderWrapper"] {
         background: rgba(255,255,255,0.05) !important;
