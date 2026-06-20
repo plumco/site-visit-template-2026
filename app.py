@@ -43,14 +43,16 @@ st.markdown("""
     /* ===== Liquid Glass background — deep gradient mesh ===== */
     .stApp {
         background:
-            radial-gradient(circle at 15% 20%, rgba(56,189,248,0.16) 0%, transparent 45%),
-            radial-gradient(circle at 85% 8%, rgba(99,102,241,0.14) 0%, transparent 42%),
-            radial-gradient(circle at 50% 95%, rgba(34,211,238,0.10) 0%, transparent 50%),
+            radial-gradient(circle at 12% 18%, rgba(56,189,248,0.30) 0%, transparent 40%),
+            radial-gradient(circle at 88% 6%, rgba(129,140,248,0.26) 0%, transparent 38%),
+            radial-gradient(circle at 50% 100%, rgba(34,211,238,0.22) 0%, transparent 45%),
+            radial-gradient(circle at 30% 70%, rgba(99,102,241,0.16) 0%, transparent 40%),
             linear-gradient(180deg, #060B16 0%, #0B1220 55%, #0A1020 100%) !important;
         background-attachment: fixed !important;
     }
 
-    [data-testid="stAppViewContainer"], [data-testid="stHeader"], [data-testid="stMain"] {
+    [data-testid="stAppViewContainer"], [data-testid="stHeader"], [data-testid="stMain"],
+    [data-testid="stToolbar"], [data-testid="stDecoration"], [data-testid="stBottomBlockContainer"] {
         background: transparent !important;
     }
 
@@ -79,10 +81,10 @@ st.markdown("""
 
     /* ===== KPI / Metric glass cards ===== */
     div[data-testid="stMetric"], div[data-testid="metric-container"] {
-        background: rgba(255,255,255,0.055) !important;
+        background: linear-gradient(160deg, rgba(56,189,248,0.10), rgba(255,255,255,0.04)) !important;
         backdrop-filter: blur(20px) saturate(160%);
         -webkit-backdrop-filter: blur(20px) saturate(160%);
-        border: 1px solid rgba(255,255,255,0.12) !important;
+        border: 1px solid rgba(56,189,248,0.20) !important;
         border-radius: 18px !important;
         padding: 1.4rem 1.2rem !important;
         box-shadow: 0 8px 32px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.08);
@@ -90,8 +92,8 @@ st.markdown("""
     }
     div[data-testid="stMetric"]:hover {
         transform: translateY(-2px);
-        box-shadow: 0 12px 40px rgba(56,189,248,0.18), inset 0 1px 0 rgba(255,255,255,0.1);
-        border-color: rgba(56,189,248,0.35) !important;
+        box-shadow: 0 12px 40px rgba(56,189,248,0.25), inset 0 1px 0 rgba(255,255,255,0.1);
+        border-color: rgba(56,189,248,0.5) !important;
     }
     div[data-testid="stMetricLabel"] {
         color: #94A3B8 !important;
@@ -126,22 +128,37 @@ st.markdown("""
         color: #38BDF8 !important;
         box-shadow: inset 0 0 0 1px rgba(56,189,248,0.35);
     }
+    /* Force the tab underline indicator to cyan (overrides Streamlit default red) */
+    .stTabs [data-baseweb="tab-highlight"],
+    .stTabs [data-baseweb="tab-border"] {
+        background-color: #38BDF8 !important;
+    }
 
     /* ===== Buttons — glass with accent glow ===== */
-    .stButton button, .stDownloadButton button, .stFormSubmitButton button {
-        background: rgba(56,189,248,0.12) !important;
+    .stButton button, .stDownloadButton button, .stFormSubmitButton button,
+    button[kind="secondary"], button[kind="primary"],
+    button[data-testid="baseButton-secondary"], button[data-testid="baseButton-primary"],
+    button[data-testid="stBaseButton-secondary"], button[data-testid="stBaseButton-primary"] {
+        background: rgba(56,189,248,0.14) !important;
         backdrop-filter: blur(12px);
-        border: 1px solid rgba(56,189,248,0.35) !important;
-        color: #38BDF8 !important;
+        border: 1px solid rgba(56,189,248,0.45) !important;
+        color: #7DD3FC !important;
         border-radius: 12px !important;
         font-family: 'Sora', sans-serif !important;
         font-weight: 600 !important;
         transition: all 0.2s ease;
     }
-    .stButton button:hover, .stDownloadButton button:hover, .stFormSubmitButton button:hover {
-        background: rgba(56,189,248,0.22) !important;
-        box-shadow: 0 0 20px rgba(56,189,248,0.25);
-        border-color: rgba(56,189,248,0.6) !important;
+    .stButton button:hover, .stDownloadButton button:hover, .stFormSubmitButton button:hover,
+    button[kind="secondary"]:hover, button[kind="primary"]:hover,
+    button[data-testid="baseButton-secondary"]:hover, button[data-testid="baseButton-primary"]:hover,
+    button[data-testid="stBaseButton-secondary"]:hover, button[data-testid="stBaseButton-primary"]:hover {
+        background: rgba(56,189,248,0.26) !important;
+        box-shadow: 0 0 20px rgba(56,189,248,0.3);
+        border-color: rgba(56,189,248,0.7) !important;
+        color: #E0F2FE !important;
+    }
+    .stButton button p, .stDownloadButton button p, .stFormSubmitButton button p {
+        color: inherit !important;
     }
 
     /* ===== Expanders ===== */
@@ -166,17 +183,18 @@ st.markdown("""
     div[data-testid="stDataFrame"] {
         border-radius: 14px;
         overflow: hidden;
-        border: 1px solid rgba(255,255,255,0.1);
+        border: 1px solid rgba(56,189,248,0.15);
     }
 
     /* ===== Bordered containers (chart/table glass panels) ===== */
     div[data-testid="stVerticalBlockBorderWrapper"] {
-        background: rgba(255,255,255,0.045) !important;
+        background: rgba(255,255,255,0.05) !important;
         backdrop-filter: blur(18px) saturate(150%);
         -webkit-backdrop-filter: blur(18px) saturate(150%);
-        border: 1px solid rgba(255,255,255,0.1) !important;
+        border: 1px solid rgba(56,189,248,0.14) !important;
         border-radius: 16px !important;
         padding: 0.6rem !important;
+        box-shadow: 0 6px 24px rgba(0,0,0,0.3);
     }
 
     /* ===== Highlight cards — glass variant ===== */
