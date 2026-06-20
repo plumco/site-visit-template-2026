@@ -115,30 +115,43 @@ st.markdown("""
         font-weight: 600 !important;
     }
 
-    /* ===== Tabs — glass pill bar ===== */
+    /* ===== Tabs — glass pill bar, each tab styled as its own button ===== */
     .stTabs [data-baseweb="tab-list"] {
         background: rgba(255,255,255,0.04);
         backdrop-filter: blur(16px);
         border-radius: 14px;
         padding: 6px;
         border: 1px solid rgba(255,255,255,0.08);
-        gap: 4px;
+        gap: 6px;
     }
     .stTabs [data-baseweb="tab"] {
         color: #94A3B8 !important;
+        background: rgba(255,255,255,0.03) !important;
+        border: 1px solid rgba(255,255,255,0.08) !important;
         border-radius: 10px !important;
+        padding: 8px 16px !important;
         font-family: 'Sora', sans-serif !important;
         font-weight: 600 !important;
+        font-size: 0.9rem !important;
+        transition: all 0.18s ease;
+    }
+    .stTabs [data-baseweb="tab"]:hover {
+        background: rgba(56,189,248,0.08) !important;
+        border-color: rgba(56,189,248,0.25) !important;
+        color: #CBD5E1 !important;
     }
     .stTabs [aria-selected="true"] {
-        background: rgba(56,189,248,0.16) !important;
-        color: #38BDF8 !important;
-        box-shadow: inset 0 0 0 1px rgba(56,189,248,0.35);
+        background: rgba(56,189,248,0.18) !important;
+        border-color: rgba(56,189,248,0.45) !important;
+        color: #7DD3FC !important;
+        box-shadow: 0 0 16px rgba(56,189,248,0.15);
     }
-    /* Force the tab underline indicator to cyan (overrides Streamlit default red) */
+    /* Remove Streamlit's default underline indicator — pill background already shows active state */
     .stTabs [data-baseweb="tab-highlight"],
     .stTabs [data-baseweb="tab-border"] {
-        background-color: #38BDF8 !important;
+        display: none !important;
+        height: 0 !important;
+        background: transparent !important;
     }
 
     /* ===== Buttons — glass with accent glow ===== */
