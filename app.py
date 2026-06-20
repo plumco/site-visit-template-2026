@@ -165,6 +165,16 @@ st.markdown("""
         border: 1px solid rgba(255,255,255,0.1);
     }
 
+    /* ===== Bordered containers (chart/table glass panels) ===== */
+    div[data-testid="stVerticalBlockBorderWrapper"] {
+        background: rgba(255,255,255,0.045) !important;
+        backdrop-filter: blur(18px) saturate(150%);
+        -webkit-backdrop-filter: blur(18px) saturate(150%);
+        border: 1px solid rgba(255,255,255,0.1) !important;
+        border-radius: 16px !important;
+        padding: 0.6rem !important;
+    }
+
     /* ===== Highlight cards — glass variant ===== */
     .highlight-card {
         padding: 22px;
@@ -1163,19 +1173,21 @@ with tab_visits:
 
         chart_col1, chart_col2 = st.columns(2)
         with chart_col1:
-            st.markdown("##### Visits Per Month")
-            month_counts = filtered_v["Month"].value_counts().reset_index()
-            month_counts.columns = ["Month", "Visits"]
-            fig1 = px.bar(month_counts, x="Month", y="Visits", color_discrete_sequence=["#6366f1"])
-            st.plotly_chart(fig1, use_container_width=True, key="chart_t1_month")
+            with st.container(border=True):
+                st.markdown("##### Visits Per Month")
+                month_counts = filtered_v["Month"].value_counts().reset_index()
+                month_counts.columns = ["Month", "Visits"]
+                fig1 = px.bar(month_counts, x="Month", y="Visits", color_discrete_sequence=["#6366f1"])
+                st.plotly_chart(fig1, use_container_width=True, key="chart_t1_month")
         with chart_col2:
-            st.markdown("##### Top Sites / Zones")
-            if site_col:
-                site_counts = filtered_v[site_col].value_counts().nlargest(6).reset_index()
-                site_counts.columns = ["Site Name", "Visits"]
-                fig2 = px.pie(site_counts, names="Site Name", values="Visits", hole=0.4,
-                    color_discrete_sequence=["#6366f1", "#14b8a6", "#f59e0b", "#f43f5e", "#8b5cf6", "#0ea5e9"])
-                st.plotly_chart(fig2, use_container_width=True, key="chart_t1_pie")
+            with st.container(border=True):
+                st.markdown("##### Top Sites / Zones")
+                if site_col:
+                    site_counts = filtered_v[site_col].value_counts().nlargest(6).reset_index()
+                    site_counts.columns = ["Site Name", "Visits"]
+                    fig2 = px.pie(site_counts, names="Site Name", values="Visits", hole=0.4,
+                        color_discrete_sequence=["#6366f1", "#14b8a6", "#f59e0b", "#f43f5e", "#8b5cf6", "#0ea5e9"])
+                    st.plotly_chart(fig2, use_container_width=True, key="chart_t1_pie")
 
         st.subheader("Visit Records")
         display_cols = []
@@ -1402,20 +1414,22 @@ with tab_master:
 
         m_chart1, m_chart2 = st.columns(2)
         with m_chart1:
-            st.markdown("##### Projects by State")
-            if col_state:
-                state_c = filtered_m[col_state].value_counts().reset_index()
-                state_c.columns = ["State", "Count"]
-                fig3 = px.bar(state_c, x="State", y="Count", color_discrete_sequence=["#14b8a6"])
-                st.plotly_chart(fig3, use_container_width=True, key="chart_t2_state")
+            with st.container(border=True):
+                st.markdown("##### Projects by State")
+                if col_state:
+                    state_c = filtered_m[col_state].value_counts().reset_index()
+                    state_c.columns = ["State", "Count"]
+                    fig3 = px.bar(state_c, x="State", y="Count", color_discrete_sequence=["#14b8a6"])
+                    st.plotly_chart(fig3, use_container_width=True, key="chart_t2_state")
         with m_chart2:
-            st.markdown("##### Project Status")
-            if col_stat:
-                stat_c = filtered_m[col_stat].value_counts().reset_index()
-                stat_c.columns = ["Status", "Count"]
-                fig4 = px.pie(stat_c, names="Status", values="Count", hole=0.4,
-                    color_discrete_sequence=["#6366f1", "#14b8a6", "#f59e0b", "#f43f5e"])
-                st.plotly_chart(fig4, use_container_width=True, key="chart_t2_pie")
+            with st.container(border=True):
+                st.markdown("##### Project Status")
+                if col_stat:
+                    stat_c = filtered_m[col_stat].value_counts().reset_index()
+                    stat_c.columns = ["Status", "Count"]
+                    fig4 = px.pie(stat_c, names="Status", values="Count", hole=0.4,
+                        color_discrete_sequence=["#6366f1", "#14b8a6", "#f59e0b", "#f43f5e"])
+                    st.plotly_chart(fig4, use_container_width=True, key="chart_t2_pie")
 
         st.subheader("Master Projects Directory")
         st.dataframe(filtered_m.astype(str), use_container_width=True, hide_index=True)
@@ -1492,39 +1506,41 @@ with tab_exec:
 
             chart_col1, chart_col2 = st.columns(2)
             with chart_col1:
-                st.markdown("#### 📊 Reports Sent to Client")
-                st.caption("👆 Click a bar to filter the table below — Power BI style")
-                if not summary_df.empty:
-                    sorted_df1 = summary_df.sort_values(by="Report sent to the client", ascending=True)
-                    fig_left = px.bar(sorted_df1, x="Report sent to the client", y="Associate ID",
-                        orientation="h", text="Report sent to the client", color_discrete_sequence=["#3b82f6"])
-                    fig_left.update_traces(textposition="outside")
-                    fig_left.update_layout(xaxis_title="", yaxis_title="", showlegend=False, margin=dict(l=0, r=0, t=30, b=0))
-                    event_left = st.plotly_chart(
-                        fig_left, use_container_width=True, key=f"chart_t3_reports_{ctr}",
-                        on_select="rerun", selection_mode="points"
-                    )
-                    if event_left and event_left.get("selection", {}).get("points"):
-                        pts = event_left["selection"]["points"]
-                        if pts:
-                            selected_associate = pts[0].get("y")
+                with st.container(border=True):
+                    st.markdown("#### 📊 Reports Sent to Client")
+                    st.caption("👆 Click a bar to filter the table below — Power BI style")
+                    if not summary_df.empty:
+                        sorted_df1 = summary_df.sort_values(by="Report sent to the client", ascending=True)
+                        fig_left = px.bar(sorted_df1, x="Report sent to the client", y="Associate ID",
+                            orientation="h", text="Report sent to the client", color_discrete_sequence=["#3b82f6"])
+                        fig_left.update_traces(textposition="outside")
+                        fig_left.update_layout(xaxis_title="", yaxis_title="", showlegend=False, margin=dict(l=0, r=0, t=30, b=0))
+                        event_left = st.plotly_chart(
+                            fig_left, use_container_width=True, key=f"chart_t3_reports_{ctr}",
+                            on_select="rerun", selection_mode="points"
+                        )
+                        if event_left and event_left.get("selection", {}).get("points"):
+                            pts = event_left["selection"]["points"]
+                            if pts:
+                                selected_associate = pts[0].get("y")
             with chart_col2:
-                st.markdown("#### 🏢 Tower vs Site Visits Breakdown")
-                st.caption("👆 Click a bar to filter the table below — Power BI style")
-                if not summary_df.empty:
-                    df_melted = summary_df.melt(id_vars="Associate ID", value_vars=["Floor Visit", "Site Tower visit"],
-                        var_name="Visit Type", value_name="Count")
-                    fig_right = px.bar(df_melted, x="Count", y="Associate ID", color="Visit Type", barmode="group",
-                        orientation="h", color_discrete_map={"Floor Visit": "#6366f1", "Site Tower visit": "#10b981"})
-                    fig_right.update_layout(xaxis_title="", yaxis_title="", legend_title="", margin=dict(l=0, r=0, t=30, b=0))
-                    event_right = st.plotly_chart(
-                        fig_right, use_container_width=True, key=f"chart_t3_breakdown_{ctr}",
-                        on_select="rerun", selection_mode="points"
-                    )
-                    if not selected_associate and event_right and event_right.get("selection", {}).get("points"):
-                        pts = event_right["selection"]["points"]
-                        if pts:
-                            selected_associate = pts[0].get("y")
+                with st.container(border=True):
+                    st.markdown("#### 🏢 Tower vs Site Visits Breakdown")
+                    st.caption("👆 Click a bar to filter the table below — Power BI style")
+                    if not summary_df.empty:
+                        df_melted = summary_df.melt(id_vars="Associate ID", value_vars=["Floor Visit", "Site Tower visit"],
+                            var_name="Visit Type", value_name="Count")
+                        fig_right = px.bar(df_melted, x="Count", y="Associate ID", color="Visit Type", barmode="group",
+                            orientation="h", color_discrete_map={"Floor Visit": "#6366f1", "Site Tower visit": "#10b981"})
+                        fig_right.update_layout(xaxis_title="", yaxis_title="", legend_title="", margin=dict(l=0, r=0, t=30, b=0))
+                        event_right = st.plotly_chart(
+                            fig_right, use_container_width=True, key=f"chart_t3_breakdown_{ctr}",
+                            on_select="rerun", selection_mode="points"
+                        )
+                        if not selected_associate and event_right and event_right.get("selection", {}).get("points"):
+                            pts = event_right["selection"]["points"]
+                            if pts:
+                                selected_associate = pts[0].get("y")
 
             st.markdown("#### 📋 Detailed Performance Breakdown")
             if not summary_df.empty:
@@ -1711,19 +1727,21 @@ with tab_site_card:
 
                 chart_1, chart_2 = st.columns(2)
                 with chart_1:
-                    st.markdown("##### Site Visits by Month")
-                    if "Month" in site_visit_filtered.columns:
-                        month_chart = site_visit_filtered["Month"].value_counts().reset_index()
-                        month_chart.columns = ["Month", "Visits"]
-                        fig_month = px.bar(month_chart, x="Month", y="Visits", color_discrete_sequence=["#6366f1"])
-                        st.plotly_chart(fig_month, use_container_width=True, key="site_card_month_chart")
+                    with st.container(border=True):
+                        st.markdown("##### Site Visits by Month")
+                        if "Month" in site_visit_filtered.columns:
+                            month_chart = site_visit_filtered["Month"].value_counts().reset_index()
+                            month_chart.columns = ["Month", "Visits"]
+                            fig_month = px.bar(month_chart, x="Month", y="Visits", color_discrete_sequence=["#6366f1"])
+                            st.plotly_chart(fig_month, use_container_width=True, key="site_card_month_chart")
                 with chart_2:
-                    st.markdown("##### Status Breakdown")
-                    if "Status" in site_visit_filtered.columns:
-                        status_chart = site_visit_filtered["Status"].value_counts().reset_index()
-                        status_chart.columns = ["Status", "Count"]
-                        fig_status = px.pie(status_chart, names="Status", values="Count", hole=0.4)
-                        st.plotly_chart(fig_status, use_container_width=True, key="site_card_status_chart")
+                    with st.container(border=True):
+                        st.markdown("##### Status Breakdown")
+                        if "Status" in site_visit_filtered.columns:
+                            status_chart = site_visit_filtered["Status"].value_counts().reset_index()
+                            status_chart.columns = ["Status", "Count"]
+                            fig_status = px.pie(status_chart, names="Status", values="Count", hole=0.4)
+                            st.plotly_chart(fig_status, use_container_width=True, key="site_card_status_chart")
 
                 st.dataframe(visit_display_df.astype(str), use_container_width=True, hide_index=True)
 
@@ -1981,48 +1999,52 @@ with tab_issues:
             ch1, ch2 = st.columns(2)
 
             with ch1:
-                st.markdown("##### Issues by Status")
-                if "Status" in issues_df.columns:
-                    sc = issues_df["Status"].value_counts().reset_index()
-                    sc.columns = ["Status", "Count"]
-                    fig_is = px.pie(sc, names="Status", values="Count", hole=0.4,
-                        color_discrete_map={"Open": "#f43f5e", "In Progress": "#f59e0b", "Resolved": "#22c55e", "Closed": "#94a3b8"})
-                    st.plotly_chart(fig_is, use_container_width=True, key="chart_issue_status")
+                with st.container(border=True):
+                    st.markdown("##### Issues by Status")
+                    if "Status" in issues_df.columns:
+                        sc = issues_df["Status"].value_counts().reset_index()
+                        sc.columns = ["Status", "Count"]
+                        fig_is = px.pie(sc, names="Status", values="Count", hole=0.4,
+                            color_discrete_map={"Open": "#f43f5e", "In Progress": "#f59e0b", "Resolved": "#22c55e", "Closed": "#94a3b8"})
+                        st.plotly_chart(fig_is, use_container_width=True, key="chart_issue_status")
 
             with ch2:
-                st.markdown("##### Issues by Severity")
-                if "Severity" in issues_df.columns:
-                    sevc = issues_df["Severity"].value_counts().reset_index()
-                    sevc.columns = ["Severity", "Count"]
-                    fig_sv = px.bar(sevc, x="Severity", y="Count", color="Severity",
-                        color_discrete_map={"High": "#f43f5e", "Medium": "#f59e0b", "Low": "#22c55e"})
-                    fig_sv.update_layout(showlegend=False)
-                    st.plotly_chart(fig_sv, use_container_width=True, key="chart_issue_sev")
+                with st.container(border=True):
+                    st.markdown("##### Issues by Severity")
+                    if "Severity" in issues_df.columns:
+                        sevc = issues_df["Severity"].value_counts().reset_index()
+                        sevc.columns = ["Severity", "Count"]
+                        fig_sv = px.bar(sevc, x="Severity", y="Count", color="Severity",
+                            color_discrete_map={"High": "#f43f5e", "Medium": "#f59e0b", "Low": "#22c55e"})
+                        fig_sv.update_layout(showlegend=False)
+                        st.plotly_chart(fig_sv, use_container_width=True, key="chart_issue_sev")
 
             ch3, ch4 = st.columns(2)
 
             with ch3:
-                st.markdown("##### Top Sites — Open Issues")
-                if "Site Name" in issues_df.columns and "Status" in issues_df.columns:
-                    open_df = issues_df[issues_df["Status"].isin(["Open", "In Progress"])]
-                    if not open_df.empty:
-                        top_sites = open_df["Site Name"].value_counts().nlargest(8).reset_index()
-                        top_sites.columns = ["Site", "Count"]
-                        fig_ts = px.bar(top_sites, x="Count", y="Site", orientation="h",
-                            color_discrete_sequence=["#f43f5e"])
-                        fig_ts.update_layout(yaxis=dict(autorange="reversed"))
-                        st.plotly_chart(fig_ts, use_container_width=True, key="chart_issue_sites")
-                    else:
-                        st.success("✅ No open issues across any site!")
+                with st.container(border=True):
+                    st.markdown("##### Top Sites — Open Issues")
+                    if "Site Name" in issues_df.columns and "Status" in issues_df.columns:
+                        open_df = issues_df[issues_df["Status"].isin(["Open", "In Progress"])]
+                        if not open_df.empty:
+                            top_sites = open_df["Site Name"].value_counts().nlargest(8).reset_index()
+                            top_sites.columns = ["Site", "Count"]
+                            fig_ts = px.bar(top_sites, x="Count", y="Site", orientation="h",
+                                color_discrete_sequence=["#f43f5e"])
+                            fig_ts.update_layout(yaxis=dict(autorange="reversed"))
+                            st.plotly_chart(fig_ts, use_container_width=True, key="chart_issue_sites")
+                        else:
+                            st.success("✅ No open issues across any site!")
 
             with ch4:
-                st.markdown("##### Issues by Type")
-                if "Issue Type" in issues_df.columns:
-                    tc = issues_df["Issue Type"].value_counts().reset_index()
-                    tc.columns = ["Type", "Count"]
-                    fig_t = px.pie(tc, names="Type", values="Count", hole=0.4,
-                        color_discrete_sequence=px.colors.qualitative.Pastel)
-                    st.plotly_chart(fig_t, use_container_width=True, key="chart_issue_type")
+                with st.container(border=True):
+                    st.markdown("##### Issues by Type")
+                    if "Issue Type" in issues_df.columns:
+                        tc = issues_df["Issue Type"].value_counts().reset_index()
+                        tc.columns = ["Type", "Count"]
+                        fig_t = px.pie(tc, names="Type", values="Count", hole=0.4,
+                            color_discrete_sequence=px.colors.qualitative.Pastel)
+                        st.plotly_chart(fig_t, use_container_width=True, key="chart_issue_type")
 
             # ── Associate-wise open issues ──
             if "Assigned To" in issues_df.columns and "Status" in issues_df.columns:
@@ -2031,11 +2053,12 @@ with tab_issues:
                     (issues_df["Assigned To"].str.strip() != "")
                 ]
                 if not open_assigned.empty:
-                    st.markdown("##### Open Issues by Assignee")
-                    ac = open_assigned["Assigned To"].value_counts().reset_index()
-                    ac.columns = ["Assignee", "Open Issues"]
-                    fig_ac = px.bar(ac, x="Open Issues", y="Assignee", orientation="h",
-                        color_discrete_sequence=["#6366f1"], text="Open Issues")
-                    fig_ac.update_traces(textposition="outside")
-                    fig_ac.update_layout(yaxis=dict(autorange="reversed"), margin=dict(l=0, r=60, t=30, b=0))
-                    st.plotly_chart(fig_ac, use_container_width=True, key="chart_issue_assignee")
+                    with st.container(border=True):
+                        st.markdown("##### Open Issues by Assignee")
+                        ac = open_assigned["Assigned To"].value_counts().reset_index()
+                        ac.columns = ["Assignee", "Open Issues"]
+                        fig_ac = px.bar(ac, x="Open Issues", y="Assignee", orientation="h",
+                            color_discrete_sequence=["#6366f1"], text="Open Issues")
+                        fig_ac.update_traces(textposition="outside")
+                        fig_ac.update_layout(yaxis=dict(autorange="reversed"), margin=dict(l=0, r=60, t=30, b=0))
+                        st.plotly_chart(fig_ac, use_container_width=True, key="chart_issue_assignee")
