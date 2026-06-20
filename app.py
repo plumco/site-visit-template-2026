@@ -46,8 +46,12 @@ st.markdown("""
             radial-gradient(circle at 15% 20%, rgba(56,189,248,0.16) 0%, transparent 45%),
             radial-gradient(circle at 85% 8%, rgba(99,102,241,0.14) 0%, transparent 42%),
             radial-gradient(circle at 50% 95%, rgba(34,211,238,0.10) 0%, transparent 50%),
-            linear-gradient(180deg, #060B16 0%, #0B1220 55%, #0A1020 100%);
-        background-attachment: fixed;
+            linear-gradient(180deg, #060B16 0%, #0B1220 55%, #0A1020 100%) !important;
+        background-attachment: fixed !important;
+    }
+
+    [data-testid="stAppViewContainer"], [data-testid="stHeader"], [data-testid="stMain"] {
+        background: transparent !important;
     }
 
     h1, h2, h3, h4 {
