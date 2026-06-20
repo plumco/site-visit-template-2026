@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.io as pio
 import gspread
 import requests
 import json
@@ -19,34 +20,168 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.graphics.shapes import Drawing
 from reportlab.graphics.charts.barcharts import VerticalBarChart
 
+# --- Liquid Glass chart template — transparent bg so charts blend into glass panels ---
+_glass_template = pio.templates["plotly_dark"]
+_glass_template.layout.paper_bgcolor = "rgba(0,0,0,0)"
+_glass_template.layout.plot_bgcolor = "rgba(0,0,0,0)"
+_glass_template.layout.font.color = "#CBD5E1"
+_glass_template.layout.font.family = "Inter, sans-serif"
+pio.templates["liquid_glass"] = _glass_template
+px.defaults.template = "liquid_glass"
+
 # --- 1. Page Config & CSS ---
 st.set_page_config(layout="wide", page_title="Site Visit Deep Analytics", page_icon="📊")
 
 st.markdown("""
 <style>
-    div[data-testid="metric-container"] {
-        background-color: #ffffff;
-        border: 1px solid #e2e8f0;
-        padding: 1.5rem;
-        border-radius: 1rem;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1),
-                    0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+    html, body, [class*="css"] {
+        font-family: 'Inter', sans-serif;
     }
 
+    /* ===== Liquid Glass background — deep gradient mesh ===== */
+    .stApp {
+        background:
+            radial-gradient(circle at 15% 20%, rgba(56,189,248,0.16) 0%, transparent 45%),
+            radial-gradient(circle at 85% 8%, rgba(99,102,241,0.14) 0%, transparent 42%),
+            radial-gradient(circle at 50% 95%, rgba(34,211,238,0.10) 0%, transparent 50%),
+            linear-gradient(180deg, #060B16 0%, #0B1220 55%, #0A1020 100%);
+        background-attachment: fixed;
+    }
+
+    h1, h2, h3, h4 {
+        font-family: 'Sora', sans-serif !important;
+        color: #F1F5F9 !important;
+        letter-spacing: -0.01em;
+    }
+    h1 { font-weight: 800 !important; }
+    h2, h3 { font-weight: 700 !important; }
+
+    p, span, label, .stMarkdown, .stCaption, div[data-testid="stCaptionContainer"] {
+        color: #CBD5E1;
+    }
+
+    /* ===== Sidebar — frosted glass panel ===== */
+    section[data-testid="stSidebar"] {
+        background: rgba(15, 23, 42, 0.55) !important;
+        backdrop-filter: blur(24px) saturate(150%);
+        -webkit-backdrop-filter: blur(24px) saturate(150%);
+        border-right: 1px solid rgba(255,255,255,0.08);
+    }
+    section[data-testid="stSidebar"] * {
+        color: #E2E8F0 !important;
+    }
+
+    /* ===== KPI / Metric glass cards ===== */
+    div[data-testid="stMetric"], div[data-testid="metric-container"] {
+        background: rgba(255,255,255,0.055) !important;
+        backdrop-filter: blur(20px) saturate(160%);
+        -webkit-backdrop-filter: blur(20px) saturate(160%);
+        border: 1px solid rgba(255,255,255,0.12) !important;
+        border-radius: 18px !important;
+        padding: 1.4rem 1.2rem !important;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.08);
+        transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+    }
+    div[data-testid="stMetric"]:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 12px 40px rgba(56,189,248,0.18), inset 0 1px 0 rgba(255,255,255,0.1);
+        border-color: rgba(56,189,248,0.35) !important;
+    }
+    div[data-testid="stMetricLabel"] {
+        color: #94A3B8 !important;
+        font-family: 'Inter', sans-serif !important;
+        font-size: 0.78rem !important;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+    }
+    div[data-testid="stMetricValue"] {
+        color: #F8FAFC !important;
+        font-family: 'JetBrains Mono', monospace !important;
+        font-weight: 600 !important;
+    }
+
+    /* ===== Tabs — glass pill bar ===== */
+    .stTabs [data-baseweb="tab-list"] {
+        background: rgba(255,255,255,0.04);
+        backdrop-filter: blur(16px);
+        border-radius: 14px;
+        padding: 6px;
+        border: 1px solid rgba(255,255,255,0.08);
+        gap: 4px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        color: #94A3B8 !important;
+        border-radius: 10px !important;
+        font-family: 'Sora', sans-serif !important;
+        font-weight: 600 !important;
+    }
+    .stTabs [aria-selected="true"] {
+        background: rgba(56,189,248,0.16) !important;
+        color: #38BDF8 !important;
+        box-shadow: inset 0 0 0 1px rgba(56,189,248,0.35);
+    }
+
+    /* ===== Buttons — glass with accent glow ===== */
+    .stButton button, .stDownloadButton button, .stFormSubmitButton button {
+        background: rgba(56,189,248,0.12) !important;
+        backdrop-filter: blur(12px);
+        border: 1px solid rgba(56,189,248,0.35) !important;
+        color: #38BDF8 !important;
+        border-radius: 12px !important;
+        font-family: 'Sora', sans-serif !important;
+        font-weight: 600 !important;
+        transition: all 0.2s ease;
+    }
+    .stButton button:hover, .stDownloadButton button:hover, .stFormSubmitButton button:hover {
+        background: rgba(56,189,248,0.22) !important;
+        box-shadow: 0 0 20px rgba(56,189,248,0.25);
+        border-color: rgba(56,189,248,0.6) !important;
+    }
+
+    /* ===== Expanders ===== */
+    div[data-testid="stExpander"] {
+        background: rgba(255,255,255,0.04) !important;
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border: 1px solid rgba(255,255,255,0.1) !important;
+        border-radius: 14px !important;
+    }
+
+    /* ===== Inputs / Selectboxes / Date pickers ===== */
+    div[data-baseweb="select"] > div,
+    .stTextInput input, .stTextArea textarea, .stDateInput input {
+        background: rgba(255,255,255,0.05) !important;
+        border: 1px solid rgba(255,255,255,0.12) !important;
+        border-radius: 10px !important;
+        color: #F1F5F9 !important;
+    }
+
+    /* ===== DataFrame wrapper ===== */
+    div[data-testid="stDataFrame"] {
+        border-radius: 14px;
+        overflow: hidden;
+        border: 1px solid rgba(255,255,255,0.1);
+    }
+
+    /* ===== Highlight cards — glass variant ===== */
     .highlight-card {
-        padding: 20px;
-        border-radius: 12px;
+        padding: 22px;
+        border-radius: 16px;
         text-align: left;
-        font-family: sans-serif;
-        font-weight: bold;
+        font-family: 'Inter', sans-serif;
         margin-top: 10px;
+        backdrop-filter: blur(20px) saturate(160%);
+        -webkit-backdrop-filter: blur(20px) saturate(160%);
+        box-shadow: 0 8px 28px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.08);
+        border: 1px solid;
     }
-
-    .card-blue  { background-color: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
-    .card-green { background-color: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; }
-    .card-red   { background-color: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
-    .card-title { font-size: 0.9rem; margin-bottom: 5px; opacity: 0.8; }
-    .card-value { font-size: 1.2rem; }
+    .card-blue  { background: rgba(56,189,248,0.10);  border-color: rgba(56,189,248,0.30);  color: #7DD3FC; }
+    .card-green { background: rgba(52,211,153,0.10);  border-color: rgba(52,211,153,0.30);  color: #6EE7B7; }
+    .card-red   { background: rgba(248,113,113,0.10); border-color: rgba(248,113,113,0.30); color: #FCA5A5; }
+    .card-title { font-size: 0.82rem; margin-bottom: 6px; opacity: 0.9; font-weight: 600; letter-spacing: 0.02em; }
+    .card-value { font-size: 1.15rem; font-family: 'JetBrains Mono', monospace; font-weight: 600; color: #F1F5F9; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -74,15 +209,25 @@ if "authenticated" not in st.session_state:
 if not st.session_state["authenticated"]:
     st.markdown("""
     <style>
-        .login-header { text-align: center; padding: 2rem 0 1rem 0; }
-        .login-header h1 { font-size: 2.5rem; margin-bottom: 0.5rem; }
-        .login-header p { color: #6b7280; font-size: 1.1rem; }
+        .login-header { text-align: center; padding: 2.5rem 0 1.5rem 0; }
+        .login-header h1 {
+            font-family: 'Sora', sans-serif;
+            font-size: 2.4rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, #38BDF8, #818CF8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 0.5rem;
+        }
+        .login-header p { color: #94A3B8; font-size: 1.05rem; font-family: 'Inter', sans-serif; }
         div[data-testid="stForm"] {
-            background: #ffffff;
-            border: 1px solid #e2e8f0;
-            border-radius: 1rem;
-            padding: 2rem;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            background: rgba(255,255,255,0.05) !important;
+            backdrop-filter: blur(28px) saturate(160%);
+            -webkit-backdrop-filter: blur(28px) saturate(160%);
+            border: 1px solid rgba(255,255,255,0.14) !important;
+            border-radius: 20px !important;
+            padding: 2.2rem !important;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.1);
         }
     </style>
     """, unsafe_allow_html=True)
