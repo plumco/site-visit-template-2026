@@ -20,12 +20,19 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.graphics.shapes import Drawing
 from reportlab.graphics.charts.barcharts import VerticalBarChart
 
-# --- Liquid Glass chart template — transparent bg so charts blend into glass panels ---
+# --- Liquid Glass chart template ---
+# NOTE: Plotly charts render inside an isolated iframe in Streamlit — transparent
+# backgrounds reveal the IFRAME's own default (pure black), not the page's gradient.
+# So we paint an explicit navy that matches the glass card tone instead.
 _glass_template = pio.templates["plotly_dark"]
-_glass_template.layout.paper_bgcolor = "rgba(0,0,0,0)"
-_glass_template.layout.plot_bgcolor = "rgba(0,0,0,0)"
+_glass_template.layout.paper_bgcolor = "#13243D"
+_glass_template.layout.plot_bgcolor = "#13243D"
 _glass_template.layout.font.color = "#CBD5E1"
 _glass_template.layout.font.family = "Inter, sans-serif"
+_glass_template.layout.xaxis.gridcolor = "rgba(255,255,255,0.08)"
+_glass_template.layout.yaxis.gridcolor = "rgba(255,255,255,0.08)"
+_glass_template.layout.xaxis.linecolor = "rgba(255,255,255,0.15)"
+_glass_template.layout.yaxis.linecolor = "rgba(255,255,255,0.15)"
 pio.templates["liquid_glass"] = _glass_template
 px.defaults.template = "liquid_glass"
 
@@ -490,21 +497,70 @@ def create_site_card_html(selected_site, master_row_for_report, master_cols_1, m
     technical_na, total_towers, last_visit_date, last_visit_by, last_visit_comment):
     html = f"""<!DOCTYPE html><html><head><meta charset="UTF-8">
 <style>
-    body {{ margin: 0; padding: 0; font-family: Arial, sans-serif; background: transparent; }}
-    .site-report-card {{ background-color: #ffffff; color: #111827; border: 1px solid #d1d5db; border-radius: 14px; padding: 22px; box-shadow: 0 6px 18px rgba(0,0,0,0.18); box-sizing: border-box; width: 100%; }}
-    .site-report-header {{ display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #111827; padding-bottom: 12px; margin-bottom: 16px; }}
-    .site-report-title {{ font-size: 30px; font-weight: 900; color: #111827; margin-bottom: 5px; }}
-    .site-report-subtitle {{ font-size: 13px; color: #4b5563; }}
-    .site-report-badge {{ background-color: #111827; color: #ffffff; padding: 8px 14px; border-radius: 8px; font-size: 12px; font-weight: 700; white-space: nowrap; }}
-    .report-section-title {{ font-size: 18px; font-weight: 800; color: #111827; margin-top: 18px; margin-bottom: 8px; border-left: 5px solid #2563eb; padding-left: 10px; }}
+    @import url('https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@600&display=swap');
+    body {{
+        margin: 0; padding: 0; font-family: 'Inter', Arial, sans-serif;
+        background:
+            radial-gradient(circle at 10% 10%, rgba(56,189,248,0.20) 0%, transparent 45%),
+            radial-gradient(circle at 90% 90%, rgba(129,140,248,0.16) 0%, transparent 45%),
+            #0E1B2E;
+    }}
+    .site-report-card {{
+        background: rgba(255,255,255,0.05);
+        backdrop-filter: blur(20px) saturate(160%);
+        -webkit-backdrop-filter: blur(20px) saturate(160%);
+        color: #F1F5F9;
+        border: 1px solid rgba(56,189,248,0.20);
+        border-radius: 18px;
+        padding: 22px;
+        box-shadow: 0 12px 40px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.08);
+        box-sizing: border-box;
+        width: 100%;
+    }}
+    .site-report-header {{
+        display: flex; justify-content: space-between; align-items: flex-start;
+        border-bottom: 1px solid rgba(56,189,248,0.25); padding-bottom: 14px; margin-bottom: 18px;
+    }}
+    .site-report-title {{
+        font-family: 'Sora', sans-serif; font-size: 28px; font-weight: 800;
+        background: linear-gradient(135deg, #38BDF8, #818CF8);
+        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        margin-bottom: 5px;
+    }}
+    .site-report-subtitle {{ font-size: 13px; color: #94A3B8; }}
+    .site-report-badge {{
+        background: rgba(56,189,248,0.15); border: 1px solid rgba(56,189,248,0.4);
+        color: #7DD3FC; padding: 8px 14px; border-radius: 10px;
+        font-size: 12px; font-weight: 700; white-space: nowrap;
+    }}
+    .report-section-title {{
+        font-family: 'Sora', sans-serif; font-size: 17px; font-weight: 700; color: #F1F5F9;
+        margin-top: 20px; margin-bottom: 10px;
+        border-left: 4px solid #38BDF8; padding-left: 10px;
+    }}
     .horizontal-info-table {{ width: 100%; border-collapse: collapse; margin-bottom: 15px; font-size: 13px; }}
-    .horizontal-info-table th {{ background-color: #f3f4f6; color: #111827; border: 1px solid #d1d5db; padding: 8px; text-align: left; font-weight: 800; white-space: nowrap; }}
-    .horizontal-info-table td {{ border: 1px solid #d1d5db; padding: 8px; color: #111827; vertical-align: top; word-break: break-word; }}
+    .horizontal-info-table th {{
+        background: rgba(255,255,255,0.06); color: #94A3B8;
+        border: 1px solid rgba(255,255,255,0.1); padding: 9px;
+        text-align: left; font-weight: 700; white-space: nowrap;
+        text-transform: uppercase; font-size: 11px; letter-spacing: 0.03em;
+    }}
+    .horizontal-info-table td {{
+        border: 1px solid rgba(255,255,255,0.1); padding: 9px;
+        color: #F1F5F9; vertical-align: top; word-break: break-word;
+        background: rgba(255,255,255,0.02);
+    }}
     .kpi-strip {{ display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; margin-top: 12px; margin-bottom: 15px; }}
-    .kpi-box {{ background-color: #f9fafb; border: 1px solid #d1d5db; border-radius: 10px; padding: 12px; }}
-    .kpi-label {{ font-size: 12px; color: #6b7280; font-weight: 700; margin-bottom: 5px; }}
-    .kpi-value {{ font-size: 23px; font-weight: 900; color: #111827; }}
-    .last-comment-box {{ background-color: #fffbeb; border: 1px solid #f59e0b; color: #78350f; padding: 12px; border-radius: 10px; margin-top: 8px; font-size: 14px; }}
+    .kpi-box {{
+        background: rgba(56,189,248,0.08); border: 1px solid rgba(56,189,248,0.20);
+        border-radius: 12px; padding: 12px;
+    }}
+    .kpi-label {{ font-size: 11px; color: #94A3B8; font-weight: 700; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.03em; }}
+    .kpi-value {{ font-family: 'JetBrains Mono', monospace; font-size: 22px; font-weight: 600; color: #F8FAFC; }}
+    .last-comment-box {{
+        background: rgba(251,191,36,0.08); border: 1px solid rgba(251,191,36,0.30);
+        color: #FDE68A; padding: 14px; border-radius: 12px; margin-top: 8px; font-size: 14px;
+    }}
     @media screen and (max-width: 1200px) {{ .kpi-strip {{ grid-template-columns: repeat(3, 1fr); }} }}
     @media screen and (max-width: 700px) {{ .kpi-strip {{ grid-template-columns: repeat(1, 1fr); }} .site-report-header {{ display: block; }} .site-report-badge {{ display: inline-block; margin-top: 10px; }} }}
 </style></head><body>
