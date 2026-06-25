@@ -746,249 +746,120 @@ def build_executive_pdf(display_df, total_floors, total_sites, total_sent, total
                          selected_month, highest_coverage_str, highest_prod_str, critical_gaps_str,
                          summary_df):
     """
-    Builds a highly professional, branded PDF for monthly review meetings.
-    Navy header, colored KPI boxes, bar chart, styled tables, footer.
+    Builds a print-ready PDF of the Executive Dashboard for monthly review meetings.
+    Returns bytes.
     """
-    from reportlab.lib.units import mm, cm
-    from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
-    from reportlab.platypus import HRFlowable, KeepTogether, PageBreak
-    from reportlab.pdfgen import canvas as pdfcanvas
-
-    # ── Colors ──
-    NAVY    = colors.HexColor("#0E1B2E")
-    NAVY2   = colors.HexColor("#13243D")
-    CYAN    = colors.HexColor("#38BDF8")
-    CYAN_L  = colors.HexColor("#E0F2FE")
-    WHITE   = colors.white
-    SLATE   = colors.HexColor("#64748B")
-    DARK    = colors.HexColor("#1E293B")
-    GREEN_B = colors.HexColor("#DCFCE7")
-    GREEN_T = colors.HexColor("#15803D")
-    AMBER_B = colors.HexColor("#FEF3C7")
-    AMBER_T = colors.HexColor("#92400E")
-    RED_B   = colors.HexColor("#FEE2E2")
-    RED_T   = colors.HexColor("#B91C1C")
-    BLUE_B  = colors.HexColor("#EFF6FF")
-    BLUE_T  = colors.HexColor("#1D4ED8")
-    GREY_B  = colors.HexColor("#F8FAFC")
-
-    page_w, page_h = landscape(A4)
-    margin = 20 * mm
-    content_w = page_w - 2 * margin
-
     buffer = io.BytesIO()
-
-    # ── Page template with header/footer drawn on canvas ──
-    def draw_page(canvas_obj, doc_obj):
-        canvas_obj.saveState()
-        # Full-width navy header background
-        canvas_obj.setFillColor(NAVY)
-        canvas_obj.rect(0, page_h - 52 * mm, page_w, 52 * mm, fill=1, stroke=0)
-        # Cyan accent bar at bottom of header
-        canvas_obj.setFillColor(CYAN)
-        canvas_obj.rect(0, page_h - 53 * mm, page_w, 2 * mm, fill=1, stroke=0)
-        # Company name
-        canvas_obj.setFont("Helvetica-Bold", 20)
-        canvas_obj.setFillColor(WHITE)
-        canvas_obj.drawString(margin, page_h - 20 * mm, "HULIOT PIPES & FITTINGS PVT. LTD.")
-        # Report title
-        canvas_obj.setFont("Helvetica", 13)
-        canvas_obj.setFillColor(CYAN)
-        canvas_obj.drawString(margin, page_h - 31 * mm, "Executive Dashboard Report — West Zone")
-        # Month / Generated in header right
-        canvas_obj.setFont("Helvetica", 9)
-        canvas_obj.setFillColor(colors.HexColor("#94A3B8"))
-        right_x = page_w - margin
-        canvas_obj.drawRightString(right_x, page_h - 20 * mm, f"Period: {selected_month}")
-        canvas_obj.drawRightString(right_x, page_h - 28 * mm, f"Generated: {datetime.now().strftime('%d %b %Y, %H:%M')}")
-        canvas_obj.drawRightString(right_x, page_h - 36 * mm, "CONFIDENTIAL")
-        # Footer
-        canvas_obj.setFillColor(NAVY)
-        canvas_obj.rect(0, 0, page_w, 10 * mm, fill=1, stroke=0)
-        canvas_obj.setFont("Helvetica", 8)
-        canvas_obj.setFillColor(colors.HexColor("#94A3B8"))
-        canvas_obj.drawString(margin, 4 * mm, "Huliot Pipes & Fittings Pvt. Ltd.  |  West Zone Field Analytics  |  CONFIDENTIAL")
-        canvas_obj.drawRightString(page_w - margin, 4 * mm, f"Page {doc_obj.page}")
-        canvas_obj.restoreState()
-
-    from reportlab.platypus import BaseDocTemplate, Frame, PageTemplate
-    doc = BaseDocTemplate(
-        buffer,
-        pagesize=landscape(A4),
-        leftMargin=margin,
-        rightMargin=margin,
-        topMargin=57 * mm,
-        bottomMargin=14 * mm,
+    doc = SimpleDocTemplate(
+        buffer, pagesize=landscape(A4),
+        leftMargin=24, rightMargin=24, topMargin=24, bottomMargin=24
     )
-    frame = Frame(margin, 14 * mm, content_w, page_h - 57 * mm - 14 * mm, id="main")
-    doc.addPageTemplates([PageTemplate(id="main", frames=[frame], onPage=draw_page)])
-
     styles = getSampleStyleSheet()
-    section_style = ParagraphStyle("SectionH", fontSize=11, fontName="Helvetica-Bold",
-                                   textColor=NAVY, spaceBefore=14, spaceAfter=6)
-    body_style = ParagraphStyle("Body", fontSize=9, textColor=DARK, spaceAfter=4)
+    title_style = ParagraphStyle("TitleStyle", parent=styles["Title"], fontSize=18, textColor=colors.HexColor("#111827"))
+    sub_style = ParagraphStyle("SubStyle", parent=styles["Normal"], fontSize=10, textColor=colors.HexColor("#4b5563"))
+    h_style = ParagraphStyle("HStyle", parent=styles["Heading3"], fontSize=12, textColor=colors.HexColor("#111827"), spaceBefore=10, spaceAfter=6)
 
     elements = []
+    elements.append(Paragraph("Huliot West Zone - Executive Dashboard Report", title_style))
+    elements.append(Paragraph(f"Month: {selected_month}  |  Generated: {datetime.now().strftime('%d-%m-%Y %H:%M')}", sub_style))
+    elements.append(Spacer(1, 14))
 
-    # ── KPI BOXES — 4 colored cards ──
-    kpi_items = [
-        ("TOTAL FLOOR VISITS",   str(total_floors),  BLUE_B,  BLUE_T),
-        ("TOTAL SITE VISITS",    str(total_sites),   CYAN_L,  colors.HexColor("#0369A1")),
-        ("REPORTS SENT",         str(total_sent),    GREEN_B, GREEN_T),
-        ("PENDING REPORTS",      str(total_pending), RED_B,   RED_T),
+    # --- KPI strip ---
+    kpi_data = [
+        ["Total Floor Visits", "Total Site Visits", "Total Reports Sent", "Total Pending Reports"],
+        [str(total_floors), str(total_sites), str(total_sent), str(total_pending)]
     ]
-    kpi_row_top  = [[Paragraph(f'<font color="#{bg.hexval()[1:]}">{lbl}</font>', ParagraphStyle("kl", fontSize=8, fontName="Helvetica-Bold", textColor=t)) for lbl, val, bg, t in kpi_items]]
-    kpi_row_top  = [[Paragraph(lbl, ParagraphStyle("kl", fontSize=8, fontName="Helvetica-Bold", textColor=t, alignment=TA_CENTER)) for lbl, val, bg, t in kpi_items]]
-    kpi_row_val  = [[Paragraph(val, ParagraphStyle("kv", fontSize=28, fontName="Helvetica-Bold", textColor=t, alignment=TA_CENTER)) for lbl, val, bg, t in kpi_items]]
-    kpi_col_w = content_w / 4
-
-    kpi_table = Table([kpi_row_top[0], kpi_row_val[0]], colWidths=[kpi_col_w] * 4)
-    kpi_cmds = [
-        ("ALIGN", (0,0), (-1,-1), "CENTER"),
-        ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
-        ("TOPPADDING", (0,0), (-1,-1), 10),
-        ("BOTTOMPADDING", (0,0), (-1,-1), 10),
-        ("LEFTPADDING", (0,0), (-1,-1), 6),
-        ("RIGHTPADDING", (0,0), (-1,-1), 6),
-        ("LINEBELOW", (0,0), (-1,0), 1, colors.HexColor("#E2E8F0")),
-        ("ROUNDEDCORNERS", [8]),
-    ]
-    for i, (_, _, bg, _) in enumerate(kpi_items):
-        kpi_cmds += [
-            ("BACKGROUND", (i,0), (i,-1), bg),
-        ]
-    # Vertical separators
-    for i in range(1, 4):
-        kpi_cmds.append(("LINEBEFORE", (i,0), (i,-1), 1, colors.HexColor("#E2E8F0")))
-
-    kpi_table.setStyle(TableStyle(kpi_cmds))
+    kpi_table = Table(kpi_data, colWidths=[180, 180, 180, 180])
+    kpi_table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#111827")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTSIZE", (0, 0), (-1, 0), 10),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 1), (-1, 1), 18),
+        ("FONTNAME", (0, 1), (-1, 1), "Helvetica-Bold"),
+        ("BACKGROUND", (0, 1), (-1, 1), colors.HexColor("#F9FAFB")),
+        ("TEXTCOLOR", (0, 1), (-1, 1), colors.HexColor("#111827")),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#D1D5DB")),
+        ("TOPPADDING", (0, 0), (-1, -1), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+    ]))
     elements.append(kpi_table)
-    elements.append(Spacer(1, 12))
-    elements.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#E2E8F0")))
-    elements.append(Spacer(1, 10))
+    elements.append(Spacer(1, 16))
 
-    # ── BAR CHART — Reports Sent per Associate ──
+    # --- Native bar chart: Reports Sent per Associate ---
     if not summary_df.empty:
-        elements.append(Paragraph("Reports Sent to Client — by Associate", section_style))
-        chart_df = summary_df.sort_values("Report sent to the client", ascending=False)
-        cats = [str(x)[:16] for x in chart_df["Associate ID"].tolist()]
-        vals_sent    = [float(x) for x in chart_df["Report sent to the client"].tolist()]
-        vals_floors  = [float(x) for x in chart_df["Floor Visit"].tolist()]
+        elements.append(Paragraph("Reports Sent to Client - by Associate", h_style))
+        chart_data = summary_df.sort_values("Report sent to the client", ascending=False)
+        cats = [str(x)[:14] for x in chart_data["Associate ID"].tolist()]
+        vals = [float(x) for x in chart_data["Report sent to the client"].tolist()]
 
-        chart_w = content_w
-        drawing = Drawing(chart_w, 130)
+        drawing = Drawing(700, 200)
         bc = VerticalBarChart()
-        bc.x = 60
-        bc.y = 30
-        bc.height = 90
-        bc.width = chart_w - 80
-        bc.data = [vals_sent, vals_floors]
+        bc.x = 50
+        bc.y = 40
+        bc.height = 140
+        bc.width = 600
+        bc.data = [vals]
         bc.categoryAxis.categoryNames = cats
-        bc.categoryAxis.labels.angle = 20
+        bc.categoryAxis.labels.angle = 30
         bc.categoryAxis.labels.fontSize = 7
-        bc.categoryAxis.labels.fontName = "Helvetica"
-        bc.categoryAxis.labels.dy = -6
+        bc.categoryAxis.labels.dx = -8
+        bc.categoryAxis.labels.dy = -10
         bc.valueAxis.valueMin = 0
-        bc.valueAxis.labels.fontSize = 7
-        bc.barWidth = 8
-        bc.groupSpacing = 12
-        bc.bars[0].fillColor = colors.HexColor("#3B82F6")
-        bc.bars[1].fillColor = colors.HexColor("#6366F1")
-        bc.bars[0].strokeColor = None
-        bc.bars[1].strokeColor = None
+        bc.bars[0].fillColor = colors.HexColor("#3b82f6")
         drawing.add(bc)
-
-        # Legend
-        from reportlab.graphics.shapes import Rect as RLRect, String as RLString, Group
-        leg_x = 60
-        for i, (lbl, col) in enumerate([("Reports Sent", "#3B82F6"), ("Floor Visits", "#6366F1")]):
-            rx = leg_x + i * 120
-            drawing.add(RLRect(rx, 10, 12, 8, fillColor=colors.HexColor(col), strokeColor=None))
-            drawing.add(RLString(rx + 16, 12, lbl, fontSize=7, fontName="Helvetica", fillColor=colors.HexColor("#374151")))
-
         elements.append(drawing)
-        elements.append(Spacer(1, 8))
-        elements.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#E2E8F0")))
-        elements.append(Spacer(1, 8))
+        elements.append(Spacer(1, 10))
 
-    # ── PERFORMANCE TABLE ──
-    elements.append(Paragraph("Detailed Performance Breakdown", section_style))
+    # --- Detailed performance table ---
+    elements.append(Paragraph("Detailed Performance Breakdown", h_style))
     table_cols = [c for c in [
-        "Associate ID", "Floor Visit", "Site Tower visit",
-        "Report Mark (YES)", "Suggestion Visit (NO)",
-        "Report Pending", "Report sent to the client"
+        "Associate ID", "Floor Visit", "Site Tower visit", "Report Mark (YES)",
+        "Suggestion Visit (NO)", "Report Pending", "Report sent to the client"
     ] if c in display_df.columns]
 
-    short_headers = {
-        "Associate ID": "Associate", "Floor Visit": "Floors",
-        "Site Tower visit": "Sites", "Report Mark (YES)": "Rpt (YES)",
-        "Suggestion Visit (NO)": "Sugg (NO)", "Report Pending": "Pending",
-        "Report sent to the client": "Sent to Client"
-    }
-    disp_headers = [short_headers.get(c, c) for c in table_cols]
-    table_data_rows = [disp_headers]
+    table_data = [table_cols]
     for _, row in display_df[table_cols].astype(str).iterrows():
-        table_data_rows.append(list(row))
+        table_data.append(list(row))
 
-    n_cols = len(table_cols)
-    first_col_w = 100
-    other_col_w = (content_w - first_col_w) / max(n_cols - 1, 1)
-    col_widths = [first_col_w] + [other_col_w] * (n_cols - 1)
-
-    perf_cmds = [
-        ("BACKGROUND",  (0, 0), (-1, 0), NAVY),
-        ("TEXTCOLOR",   (0, 0), (-1, 0), WHITE),
-        ("FONTNAME",    (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE",    (0, 0), (-1, -1), 8),
-        ("ALIGN",       (0, 0), (0, -1), "LEFT"),
-        ("ALIGN",       (1, 0), (-1, -1), "CENTER"),
-        ("VALIGN",      (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING",  (0, 0), (-1, -1), 6),
-        ("BOTTOMPADDING",(0, 0), (-1, -1), 6),
-        ("LEFTPADDING", (0, 0), (-1, -1), 6),
-        ("RIGHTPADDING",(0, 0), (-1, -1), 6),
-        ("GRID",        (0, 0), (-1, -1), 0.3, colors.HexColor("#CBD5E1")),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -2), [WHITE, GREY_B]),
+    perf_table = Table(table_data, repeatRows=1, colWidths=[110] + [85] * (len(table_cols) - 1))
+    table_style_cmds = [
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#111827")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ("ALIGN", (1, 0), (-1, -1), "CENTER"),
+        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#D1D5DB")),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
     ]
-    # Totals row (last row) — bold navy bg
-    last_r = len(table_data_rows) - 1
-    perf_cmds += [
-        ("BACKGROUND", (0, last_r), (-1, last_r), NAVY2),
-        ("TEXTCOLOR",  (0, last_r), (-1, last_r), WHITE),
-        ("FONTNAME",   (0, last_r), (-1, last_r), "Helvetica-Bold"),
-    ]
-    perf_table = Table(table_data_rows, colWidths=col_widths, repeatRows=1)
-    perf_table.setStyle(TableStyle(perf_cmds))
+    last_row_idx = len(table_data) - 1
+    table_style_cmds.append(("BACKGROUND", (0, last_row_idx), (-1, last_row_idx), colors.HexColor("#F3F4F6")))
+    table_style_cmds.append(("FONTNAME", (0, last_row_idx), (-1, last_row_idx), "Helvetica-Bold"))
+    perf_table.setStyle(TableStyle(table_style_cmds))
     elements.append(perf_table)
-    elements.append(Spacer(1, 12))
-    elements.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#E2E8F0")))
-    elements.append(Spacer(1, 8))
+    elements.append(Spacer(1, 16))
 
-    # ── HIGHLIGHTS ROW ──
-    elements.append(Paragraph("Performance Highlights", section_style))
-    hl_items = [
-        ("🌎  Highest Coverage",    highest_coverage_str, BLUE_B,  BLUE_T),
-        ("🚀  Highest Productivity", highest_prod_str,    GREEN_B, GREEN_T),
-        ("⏳  Critical Gaps",        critical_gaps_str,   RED_B,   RED_T),
+    # --- Highlights ---
+    elements.append(Paragraph("Highlights", h_style))
+    highlight_data = [
+        ["Highest Coverage", highest_coverage_str],
+        ["Highest Productivity", highest_prod_str],
+        ["Critical Gaps", critical_gaps_str],
     ]
-    hl_top_row = [Paragraph(lbl, ParagraphStyle("hl", fontSize=8, fontName="Helvetica-Bold", textColor=t, alignment=TA_CENTER)) for lbl, val, bg, t in hl_items]
-    hl_val_row = [Paragraph(val, ParagraphStyle("hv", fontSize=9, fontName="Helvetica", textColor=DARK, alignment=TA_CENTER)) for lbl, val, bg, t in hl_items]
-    hl_col_w = content_w / 3
-    hl_table = Table([hl_top_row, hl_val_row], colWidths=[hl_col_w] * 3)
-    hl_cmds = [
-        ("ALIGN",  (0,0), (-1,-1), "CENTER"),
-        ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
-        ("TOPPADDING", (0,0), (-1,-1), 10),
-        ("BOTTOMPADDING", (0,0), (-1,-1), 10),
-        ("LEFTPADDING", (0,0), (-1,-1), 8),
-        ("RIGHTPADDING", (0,0), (-1,-1), 8),
-        ("LINEBELOW", (0,0), (-1,0), 1, colors.HexColor("#E2E8F0")),
-        ("LINEAFTER", (0,0), (1,-1), 1, colors.HexColor("#E2E8F0")),
-    ]
-    for i, (_, _, bg, _) in enumerate(hl_items):
-        hl_cmds.append(("BACKGROUND", (i,0), (i,-1), bg))
-    hl_table.setStyle(TableStyle(hl_cmds))
-    elements.append(KeepTogether([hl_table]))
+    hl_table = Table(highlight_data, colWidths=[160, 600])
+    hl_table.setStyle(TableStyle([
+        ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#D1D5DB")),
+        ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#F9FAFB")),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+    ]))
+    elements.append(hl_table)
 
     doc.build(elements)
     buffer.seek(0)
