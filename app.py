@@ -533,7 +533,8 @@ def create_print_html_report(site_name, master_row, master_cols_1, master_cols_2
 
 def create_site_card_html(selected_site, master_row_for_report, master_cols_1, master_cols_2,
     total_visit_records, total_floor_visits, submitted_reports, pending_reports,
-    technical_na, total_towers, last_visit_date, last_visit_by, last_visit_comment):
+    technical_na, total_towers, last_visit_date, last_visit_by, last_visit_comment,
+    filter_label="All Data"):
     html = f"""<!DOCTYPE html><html><head><meta charset="UTF-8">
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@600&display=swap');
@@ -610,6 +611,11 @@ def create_site_card_html(selected_site, master_row_for_report, master_cols_1, m
             <div class="site-report-subtitle">Site Visit Report | MasterProject information above and VisitLog data below</div>
         </div>
         <div class="site-report-badge">Live Google Sheet Report</div>
+    </div>
+    <div style="margin-bottom:14px;">
+        <span style="background:rgba(52,211,153,0.12);border:1px solid rgba(52,211,153,0.35);color:#6EE7B7;padding:5px 12px;border-radius:20px;font-size:12px;font-weight:700;">
+            🔍 Viewing: {safe_text(filter_label)}
+        </span>
     </div>
     <div class="report-section-title">1. Site Master Information</div>
     {build_horizontal_table(master_row_for_report, master_cols_1)}
@@ -1151,7 +1157,7 @@ Rules:
 
 
 # --- 4. Load Data ---
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=120)
 def load_data():
     try:
         spreadsheet = client.open_by_url(SHEET_URL)
@@ -1186,21 +1192,18 @@ def load_data():
     master_df = clean_df(master_df)
     return visits_df, master_df
 
-if "data_loaded" not in st.session_state:
-    visits_df, master_df = load_data()
-    st.session_state["visits_df"] = visits_df
-    st.session_state["master_df"] = master_df
-    st.session_state["data_loaded"] = True
+# ── Always call load_data() directly — @st.cache_data(ttl) handles performance.
+# Removing the old "data_loaded" session state guard which froze data for the
+# entire session and broke real-time chart/KPI updates. ──
+visits_df, master_df = load_data()
 
-visits_df = st.session_state["visits_df"]
-master_df = st.session_state["master_df"]
-
-if st.sidebar.button("🔄 Refresh Google Sheet Data"):
-    st.cache_data.clear()
-    visits_df, master_df = load_data()
-    st.session_state["visits_df"] = visits_df
-    st.session_state["master_df"] = master_df
-    st.rerun()
+# ── Sidebar: Refresh button + last-updated timestamp ──
+with st.sidebar:
+    if st.button("🔄 Refresh Data"):
+        st.cache_data.clear()
+        st.rerun()
+    st.caption(f"🕐 Auto-refreshes every 2 min\nLast load: {datetime.now().strftime('%H:%M:%S')}")
+    st.markdown("---")
 
 # --- 5. Prepare Visit Data ---
 if not visits_df.empty:
@@ -1726,7 +1729,7 @@ with tab_exec:
 # ==========================================
 with tab_site_card:
     st.markdown("### 🏢 Site Report Card")
-    st.markdown("Select one site and download a clean report to send to anyone.")
+    st.markdown("Select site + filters → card and KPIs update instantly.")
 
     if master_df.empty and visits_df.empty:
         st.warning("No MasterProject or VisitLog data found.")
@@ -1742,49 +1745,91 @@ with tab_site_card:
         if not all_sites:
             st.warning("No site names found.")
         else:
-            c1, c2 = st.columns([3, 1])
-            with c1:
+            # ── Step 1: Site selector + column toggle ──
+            sc1, sc2 = st.columns([3, 1])
+            with sc1:
                 selected_site = st.selectbox("Select Site Name", all_sites, key="site_card_selected_site")
-            with c2:
+            with sc2:
                 st.write("")
                 st.write("")
                 show_all_columns = st.checkbox("Show all columns", value=True, key="site_card_show_all")
 
+            # ── Step 2: Get all visits for this site ──
             site_master = filter_site(master_df, master_site_col, selected_site) if master_site_col else pd.DataFrame()
             site_visits = filter_site(visits_df, visit_site_col, selected_site) if visit_site_col else pd.DataFrame()
+            master_row  = site_master.iloc[0] if not site_master.empty else pd.Series(dtype="object")
 
-            master_row = site_master.iloc[0] if not site_master.empty else pd.Series(dtype="object")
-
-            col_project      = master_site_col
-            col_state        = safe_col(master_df, ["STATE", "State"])
-            col_dist         = safe_col(master_df, ["DISTRICT / CITY", "DISTRICT", "District", "CITY", "City"])
-            col_area         = safe_col(master_df, ["Area", "AREA"])
-            col_status       = safe_col(master_df, ["STATUS OF PROJECT", "Status", "STATUS"])
+            # Column references
+            col_project       = master_site_col
+            col_state         = safe_col(master_df, ["STATE", "State"])
+            col_dist          = safe_col(master_df, ["DISTRICT / CITY", "DISTRICT", "District", "CITY", "City"])
+            col_area          = safe_col(master_df, ["Area", "AREA"])
+            col_status        = safe_col(master_df, ["STATUS OF PROJECT", "Status", "STATUS"])
             col_visit_ongoing = safe_col(master_df, ["VISIT ONGOING", "Visit Ongoing"])
-            col_tech         = safe_col(master_df, ["Technical Person", "TECHNICAL PERSON NAME", "TECHNICAL PERSON"])
-            col_sales        = safe_col(master_df, ["Sells Person", "SALES PERSON NAME", "SALES PERSON", "Sales Person"])
-            col_distributor  = safe_col(master_df, ["Distributer", "DISTRIBUTOR NANE", "DISTRIBUTOR", "Distributor"])
+            col_tech          = safe_col(master_df, ["Technical Person", "TECHNICAL PERSON NAME", "TECHNICAL PERSON"])
+            col_sales         = safe_col(master_df, ["Sells Person", "SALES PERSON NAME", "SALES PERSON", "Sales Person"])
+            col_distributor   = safe_col(master_df, ["Distributer", "DISTRIBUTOR NANE", "DISTRIBUTOR", "Distributor"])
+            assoc_col_site    = safe_col(site_visits, ["Associate ID", "Associate", "Technical Person"])
+            date_col_site     = safe_col(site_visits, ["Date of Visit", "Visit Date", "Date"])
+            comment_col_site  = safe_col(site_visits, ["Comment", "Remarks", "Observation"])
+            tower_col_site    = safe_col(site_visits, ["Tower Name", "Tower", "Building"])
+            floor_col_site    = safe_col(site_visits, ["FloorsVisited", "Floors Visited", "Floor Visited", "Floor"])
 
-            assoc_col_site = safe_col(site_visits, ["Associate ID", "Associate", "Technical Person"])
-            date_col_site  = safe_col(site_visits, ["Date of Visit", "Visit Date", "Date"])
-            comment_col_site = safe_col(site_visits, ["Comment", "Remarks", "Observation"])
-            tower_col_site = safe_col(site_visits, ["Tower Name", "Tower", "Building"])
-            floor_col_site = safe_col(site_visits, ["FloorsVisited", "Floors Visited", "Floor Visited", "Floor"])
-
-            last_visit_date = last_visit_by = last_visit_comment = "-"
+            # ── Step 3: Filters FIRST — before KPI computation ──
             if not site_visits.empty:
-                sorted_visits = site_visits.sort_values("Date Parsed", ascending=False) if "Date Parsed" in site_visits.columns else (site_visits.sort_values(date_col_site, ascending=False) if date_col_site else site_visits.copy())
+                st.markdown("#### 🔽 Filter View")
+                f1, f2, f3, f4 = st.columns(4)
+                with f1:
+                    site_months = ["All"] + clean_options(site_visits["Month"]) if "Month" in site_visits.columns else ["All"]
+                    sf_month = st.selectbox("Month", site_months, key="site_card_month")
+                with f2:
+                    site_towers = ["All"] + clean_options(site_visits[tower_col_site]) if tower_col_site else ["All"]
+                    sf_tower = st.selectbox("Tower", site_towers, key="site_card_tower")
+                with f3:
+                    site_associates = ["All"] + clean_options(site_visits[assoc_col_site]) if assoc_col_site else ["All"]
+                    sf_assoc = st.selectbox("Associate", site_associates, key="site_card_assoc")
+                with f4:
+                    site_statuses = ["All"] + clean_options(site_visits["Status"]) if "Status" in site_visits.columns else ["All"]
+                    sf_status = st.selectbox("Status", site_statuses, key="site_card_status")
+
+                # ── Step 4: Apply filters ──
+                site_visit_filtered = site_visits.copy()
+                if sf_month  != "All" and "Month"  in site_visit_filtered.columns:
+                    site_visit_filtered = site_visit_filtered[site_visit_filtered["Month"]  == sf_month]
+                if sf_tower  != "All" and tower_col_site:
+                    site_visit_filtered = site_visit_filtered[site_visit_filtered[tower_col_site].astype(str) == sf_tower]
+                if sf_assoc  != "All" and assoc_col_site:
+                    site_visit_filtered = site_visit_filtered[site_visit_filtered[assoc_col_site].astype(str) == sf_assoc]
+                if sf_status != "All" and "Status" in site_visit_filtered.columns:
+                    site_visit_filtered = site_visit_filtered[site_visit_filtered["Status"]  == sf_status]
+            else:
+                sf_month = sf_tower = sf_assoc = sf_status = "All"
+                site_visit_filtered = site_visits.copy()
+
+            # ── Step 5: Compute KPIs from FILTERED data ──
+            total_visit_records = len(site_visit_filtered)
+            total_floor_visits  = int(site_visit_filtered["Num_Floors"].sum()) if not site_visit_filtered.empty and "Num_Floors" in site_visit_filtered.columns else 0
+            submitted_reports   = len(site_visit_filtered[site_visit_filtered["Status"] == "Submitted"]) if not site_visit_filtered.empty and "Status" in site_visit_filtered.columns else 0
+            pending_reports     = len(site_visit_filtered[site_visit_filtered["Status"] == "Pending"])   if not site_visit_filtered.empty and "Status" in site_visit_filtered.columns else 0
+            technical_na        = len(site_visit_filtered[site_visit_filtered["Status"] == "Technical (NA)"]) if not site_visit_filtered.empty and "Status" in site_visit_filtered.columns else 0
+            total_towers        = site_visit_filtered[tower_col_site].nunique() if tower_col_site and not site_visit_filtered.empty else 0
+
+            # ── Step 6: Last visit from FILTERED data ──
+            last_visit_date = last_visit_by = last_visit_comment = "-"
+            if not site_visit_filtered.empty:
+                sorted_visits = site_visit_filtered.sort_values("Date Parsed", ascending=False) if "Date Parsed" in site_visit_filtered.columns else site_visit_filtered.copy()
                 last_row = sorted_visits.iloc[0]
                 if date_col_site:    last_visit_date    = last_row.get(date_col_site, "-")
                 if assoc_col_site:   last_visit_by      = last_row.get(assoc_col_site, "-")
                 if comment_col_site: last_visit_comment = last_row.get(comment_col_site, "-")
 
-            total_visit_records = len(site_visits)
-            total_floor_visits  = int(site_visits["Num_Floors"].sum()) if not site_visits.empty and "Num_Floors" in site_visits.columns else 0
-            submitted_reports   = len(site_visits[site_visits["Status"] == "Submitted"]) if not site_visits.empty and "Status" in site_visits.columns else 0
-            pending_reports     = len(site_visits[site_visits["Status"] == "Pending"])   if not site_visits.empty and "Status" in site_visits.columns else 0
-            technical_na        = len(site_visits[site_visits["Status"] == "Technical (NA)"]) if not site_visits.empty and "Status" in site_visits.columns else 0
-            total_towers        = site_visits[tower_col_site].nunique() if tower_col_site and not site_visits.empty else 0
+            # ── Build filter label for card badge ──
+            filter_parts = []
+            if sf_month  != "All": filter_parts.append(sf_month)
+            if sf_tower  != "All": filter_parts.append(sf_tower)
+            if sf_assoc  != "All": filter_parts.append(sf_assoc)
+            if sf_status != "All": filter_parts.append(sf_status)
+            filter_label = " | ".join(filter_parts) if filter_parts else "All Data"
 
             master_row_for_report = master_row.copy()
             master_row_for_report["Last Visit Date"] = last_visit_date
@@ -1797,49 +1842,30 @@ with tab_site_card:
                 "Site Name": selected_site, "Total Visit Records": total_visit_records,
                 "Total Floor Visits": total_floor_visits, "Submitted Reports": submitted_reports,
                 "Pending Reports": pending_reports, "Technical NA": technical_na,
-                "Total Towers": total_towers, "Last Visit Date": last_visit_date, "Last Visit By": last_visit_by
+                "Total Towers": total_towers, "Last Visit Date": last_visit_date, "Last Visit By": last_visit_by,
+                "Filter Applied": filter_label
             }])
 
-            site_card_html = create_site_card_html(selected_site, master_row_for_report, master_cols_1, master_cols_2,
+            # ── Step 7: Render card (always reflects current filter) ──
+            site_card_html = create_site_card_html(
+                selected_site, master_row_for_report, master_cols_1, master_cols_2,
                 total_visit_records, total_floor_visits, submitted_reports, pending_reports,
-                technical_na, total_towers, last_visit_date, last_visit_by, last_visit_comment)
-            components.html(site_card_html, height=620, scrolling=True)
+                technical_na, total_towers, last_visit_date, last_visit_by, last_visit_comment,
+                filter_label=filter_label
+            )
+            components.html(site_card_html, height=640, scrolling=True)
 
+            # ── Step 8: Charts + table + downloads from filtered data ──
             st.markdown("### 📋 VisitLog Data")
-            if site_visits.empty:
-                st.warning("No VisitLog records found for selected site.")
+            if site_visit_filtered.empty:
+                st.info(f"No records match the selected filters: **{filter_label}**")
             else:
-                f1, f2, f3, f4 = st.columns(4)
-                with f1:
-                    site_months = ["All"] + clean_options(site_visits["Month"]) if "Month" in site_visits.columns else ["All"]
-                    sf_month = st.selectbox("Month", site_months, key="site_card_month")
-                with f2:
-                    site_statuses = ["All"] + clean_options(site_visits["Status"]) if "Status" in site_visits.columns else ["All"]
-                    sf_status = st.selectbox("Status", site_statuses, key="site_card_status")
-                with f3:
-                    site_associates = ["All"] + clean_options(site_visits[assoc_col_site]) if assoc_col_site else ["All"]
-                    sf_assoc = st.selectbox("Associate", site_associates, key="site_card_assoc")
-                with f4:
-                    site_towers = ["All"] + clean_options(site_visits[tower_col_site]) if tower_col_site else ["All"]
-                    sf_tower = st.selectbox("Tower", site_towers, key="site_card_tower")
-
-                site_visit_filtered = site_visits.copy()
-                if sf_month != "All" and "Month" in site_visit_filtered.columns:
-                    site_visit_filtered = site_visit_filtered[site_visit_filtered["Month"] == sf_month]
-                if sf_status != "All" and "Status" in site_visit_filtered.columns:
-                    site_visit_filtered = site_visit_filtered[site_visit_filtered["Status"] == sf_status]
-                if assoc_col_site and sf_assoc != "All":
-                    site_visit_filtered = site_visit_filtered[site_visit_filtered[assoc_col_site].astype(str) == sf_assoc]
-                if tower_col_site and sf_tower != "All":
-                    site_visit_filtered = site_visit_filtered[site_visit_filtered[tower_col_site].astype(str) == sf_tower]
-
                 preferred_visit_cols = []
                 for c in ["Source Sheet", "Visit ID", visit_site_col, tower_col_site, floor_col_site,
                           assoc_col_site, date_col_site, "Is Report Visit?", "Status",
                           "Report Submitted Date", comment_col_site, "CreatedAt"]:
                     if c and c in site_visit_filtered.columns and c not in preferred_visit_cols:
                         preferred_visit_cols.append(c)
-
                 visit_display_df = site_visit_filtered.copy() if show_all_columns else site_visit_filtered[preferred_visit_cols].copy()
 
                 chart_1, chart_2 = st.columns(2)
