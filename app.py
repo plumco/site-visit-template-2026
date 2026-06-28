@@ -500,191 +500,36 @@ def create_excel_compatible_report(site_name, master_df, visit_df, summary_df, l
     return html.encode("utf-8")
 
 def create_print_html_report(site_name, master_row, master_cols_1, master_cols_2, summary_df, visit_df, last_comment):
-    def _build_info_table(row, cols):
-        rows_html = "<tr>"
-        for label, col in cols:
-            val = get_row_value(row, col) if col else "-"
-            rows_html += f"<th>{escape(str(label))}</th>"
-        rows_html += "</tr><tr>"
-        for label, col in cols:
-            val = get_row_value(row, col) if col else "-"
-            rows_html += f"<td>{escape(str(val))}</td>"
-        rows_html += "</tr>"
-        return f"<table class='info-table'>{rows_html}</table>"
-
-    summary_kpis = []
-    if not summary_df.empty:
-        row0 = summary_df.iloc[0]
-        summary_kpis = [
-            ("Visit Records",     row0.get("Total Visit Records",  "-"), "#EFF6FF", "#1D4ED8"),
-            ("Floor Visits",      row0.get("Total Floor Visits",   "-"), "#DBEAFE", "#0369A1"),
-            ("Submitted",         row0.get("Submitted Reports",    "-"), "#DCFCE7", "#15803D"),
-            ("Pending",           row0.get("Pending Reports",      "-"), "#FEE2E2", "#B91C1C"),
-            ("Technical NA",      row0.get("Technical NA",         "-"), "#FEF3C7", "#92400E"),
-            ("Towers",            row0.get("Total Towers",         "-"), "#F3E8FF", "#7E22CE"),
-        ]
-
-    kpi_html = "".join(f"""
-        <div class='kpi-box' style='background:{bg};border:1px solid {bc}22;'>
-            <div class='kpi-label' style='color:{bc};'>{lbl}</div>
-            <div class='kpi-value' style='color:{bc};'>{val}</div>
-        </div>""" for lbl, val, bg, bc in summary_kpis)
-
-    visit_rows_html = ""
-    if not visit_df.empty:
-        preferred = [c for c in [
-            "Visit ID", "Tower Name", "FloorsVisited", "Floors Visited",
-            "Associate ID", "Technical Person", "Date of Visit", "Is Report Visit?",
-            "Status", "Report Submitted Date", "Comment"
-        ] if c in visit_df.columns]
-        cols_to_show = preferred if preferred else list(visit_df.columns[:10])
-        visit_rows_html += "<table class='data-table'><thead><tr>"
-        for c in cols_to_show:
-            visit_rows_html += f"<th>{escape(str(c))}</th>"
-        visit_rows_html += "</tr></thead><tbody>"
-        for _, vrow in visit_df[cols_to_show].astype(str).iterrows():
-            status_val = str(vrow.get("Status", "")).strip()
-            row_class  = {"Submitted":"row-green","Pending":"row-amber","Technical (NA)":"row-blue"}.get(status_val,"")
-            visit_rows_html += f"<tr class='{row_class}'>"
-            for c in cols_to_show:
-                visit_rows_html += f"<td>{escape(str(vrow[c]))}</td>"
-            visit_rows_html += "</tr>"
-        visit_rows_html += "</tbody></table>"
-
-    html = f"""<!DOCTYPE html>
-<html><head><meta charset="UTF-8">
-<title>{escape(str(site_name))} — Site Visit Report</title>
-<style>
-  @page {{ size: A4 landscape; margin: 12mm 14mm; }}
-  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-  body {{ font-family: Arial, Helvetica, sans-serif; font-size: 11px; color: #1E293B; background: #fff; }}
-
-  /* ── Header ── */
-  .report-header {{
-    background: #0E1B2E;
-    padding: 12px 18px 10px;
-    display: flex; justify-content: space-between; align-items: flex-start;
-    border-bottom: 3px solid #38BDF8;
-    page-break-after: avoid;
-  }}
-  .header-left .company  {{ font-size: 17px; font-weight: 900; color: #fff; letter-spacing: 0.02em; }}
-  .header-left .doc-type {{ font-size: 11px; color: #38BDF8; margin-top: 3px; }}
-  .header-left .site-name {{ font-size: 13px; font-weight: 700; color: #F8FAFC; margin-top: 6px; }}
-  .header-right {{ text-align: right; font-size: 9px; color: #94A3B8; line-height: 1.6; }}
-  .header-right .badge {{
-    background: rgba(56,189,248,0.15); border: 1px solid rgba(56,189,248,0.4);
-    color: #38BDF8; padding: 3px 9px; border-radius: 5px; font-size: 9px;
-    font-weight: 700; display: inline-block; margin-bottom: 5px;
-  }}
-
-  /* ── Section titles ── */
-  .section-title {{
-    font-size: 11px; font-weight: 800; color: #0E1B2E;
-    border-left: 4px solid #38BDF8; padding-left: 8px;
-    margin: 14px 0 7px;
-  }}
-
-  /* ── Info tables (Master Project) ── */
-  .info-table {{ width: 100%; border-collapse: collapse; margin-bottom: 7px; font-size: 10px; }}
-  .info-table th {{
-    background: #F1F5F9; color: #475569; border: 1px solid #CBD5E1;
-    padding: 5px 7px; text-align: left; font-weight: 700;
-    font-size: 9px; text-transform: uppercase; letter-spacing: 0.03em;
-    white-space: nowrap;
-  }}
-  .info-table td {{ border: 1px solid #CBD5E1; padding: 5px 7px; color: #1E293B; }}
-
-  /* ── KPI strip ── */
-  .kpi-strip {{ display: flex; gap: 6px; margin: 8px 0 12px; flex-wrap: wrap; }}
-  .kpi-box {{ flex: 1; min-width: 90px; border-radius: 7px; padding: 8px 10px; text-align: center; }}
-  .kpi-label {{ font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 3px; }}
-  .kpi-value {{ font-size: 20px; font-weight: 900; }}
-
-  /* ── Last comment ── */
-  .comment-box {{
-    background: #FFFBEB; border: 1px solid #F59E0B; border-radius: 7px;
-    padding: 10px 12px; color: #78350F; font-size: 10.5px;
-    margin: 8px 0 12px; line-height: 1.5;
-  }}
-  .comment-box b {{ color: #92400E; }}
-
-  /* ── Data table (Visit Log) ── */
-  .data-table {{ width: 100%; border-collapse: collapse; font-size: 9px; margin-top: 6px; }}
-  .data-table thead th {{
-    background: #0E1B2E; color: #fff; border: 1px solid #1E3A5F;
-    padding: 5px 6px; text-align: left; font-weight: 700; white-space: nowrap;
-  }}
-  .data-table tbody td {{
-    border: 1px solid #E2E8F0; padding: 4px 6px; vertical-align: top;
-    word-break: break-word; max-width: 150px;
-  }}
-  .data-table tbody tr:nth-child(even) td {{ background: #F8FAFC; }}
-  .row-green td  {{ background: #DCFCE7 !important; }}
-  .row-amber td  {{ background: #FEF3C7 !important; }}
-  .row-blue  td  {{ background: #DBEAFE !important; }}
-
-  /* ── Footer ── */
-  .report-footer {{
-    margin-top: 14px; padding-top: 7px;
-    border-top: 2px solid #0E1B2E;
-    display: flex; justify-content: space-between;
-    font-size: 8.5px; color: #64748B;
-  }}
-
-  @media print {{
-    .no-print {{ display: none; }}
-    body {{ -webkit-print-color-adjust: exact; print-color-adjust: exact; }}
-    .report-header {{ -webkit-print-color-adjust: exact; }}
-    table {{ page-break-inside: avoid; }}
-  }}
-</style>
-</head>
-<body>
-
-<!-- Header -->
-<div class="report-header">
-  <div class="header-left">
-    <div class="company">HULIOT PIPES &amp; FITTINGS PVT. LTD.</div>
-    <div class="doc-type">Site Visit Technical Report  |  West Zone</div>
-    <div class="site-name">{escape(str(site_name))}</div>
-  </div>
-  <div class="header-right">
-    <div class="badge">SITE REPORT</div><br>
-    Generated: {datetime.now().strftime("%d-%m-%Y  %I:%M %p")}<br>
-    Document: CONFIDENTIAL — Internal Use Only
-  </div>
-</div>
-
-<!-- Section 1: Master Info -->
-<div class="section-title">1. Site Master Information</div>
-{_build_info_table(master_row, master_cols_1)}
-{_build_info_table(master_row, master_cols_2)}
-
-<!-- Section 2: Visit Summary KPIs -->
-<div class="section-title">2. Visit Summary</div>
-<div class="kpi-strip">{kpi_html}</div>
-
-<!-- Section 3: Last Visit Comment -->
-<div class="section-title">3. Last Visit Comment</div>
-<div class="comment-box">
-  <b>Date:</b> {escape(str(summary_df.iloc[0].get("Last Visit Date", "-") if not summary_df.empty else "-"))} &nbsp;|&nbsp;
-  <b>By:</b> {escape(str(summary_df.iloc[0].get("Last Visit By", "-") if not summary_df.empty else "-"))}<br><br>
-  {escape(str(last_comment))}
-</div>
-
-<!-- Section 4: Visit Log -->
-<div class="section-title">4. VisitLog Details &nbsp;<span style="font-weight:400;font-size:9px;color:#64748B;">({len(visit_df)} records &nbsp;|&nbsp; <span style="color:#15803D;">Green=Submitted</span> &nbsp;<span style="color:#92400E;">Amber=Pending</span> &nbsp;<span style="color:#0369A1;">Blue=Tech NA</span>)</span></div>
-{visit_rows_html}
-
-<!-- Footer -->
-<div class="report-footer">
-  <span>Huliot Pipes &amp; Fittings Pvt. Ltd. &nbsp;|&nbsp; West Zone Field Report &nbsp;|&nbsp; CONFIDENTIAL</span>
-  <span>{escape(str(site_name))} &nbsp;|&nbsp; {datetime.now().strftime("%d %b %Y")}</span>
-</div>
-
-</body></html>"""
+    html = f"""
+    <html><head><meta charset="UTF-8"><title>{safe_text(site_name)} Site Report</title>
+    <style>
+        body {{ font-family: Arial, sans-serif; margin: 30px; color: #111827; }}
+        .header {{ display: flex; justify-content: space-between; border-bottom: 3px solid #111827; padding-bottom: 12px; margin-bottom: 18px; }}
+        .title {{ font-size: 28px; font-weight: 800; }}
+        .subtitle {{ color: #4b5563; font-size: 13px; margin-top: 5px; }}
+        .badge {{ background: #111827; color: white; padding: 8px 12px; border-radius: 6px; font-size: 12px; height: fit-content; }}
+        h3 {{ border-left: 5px solid #2563eb; padding-left: 10px; margin-top: 24px; }}
+        table {{ width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 16px; }}
+        th {{ background: #f3f4f6; border: 1px solid #d1d5db; padding: 8px; text-align: left; }}
+        td {{ border: 1px solid #d1d5db; padding: 8px; vertical-align: top; }}
+        .comment {{ background: #fffbeb; border: 1px solid #f59e0b; padding: 12px; border-radius: 8px; color: #78350f; }}
+    </style></head><body>
+        <div class="header">
+            <div>
+                <div class="title">{safe_text(site_name)}</div>
+                <div class="subtitle">Site Visit Report | Generated On {datetime.now().strftime("%d-%m-%Y %I:%M %p")}</div>
+            </div>
+            <div class="badge">Huliot Site Report</div>
+        </div>
+        <h3>1. Site Master Information</h3>
+        {build_horizontal_table(master_row, master_cols_1)}
+        {build_horizontal_table(master_row, master_cols_2)}
+        <h3>2. Visit Summary</h3>{df_to_html_table(summary_df)}
+        <h3>3. Last Visit Comment</h3><div class="comment">{safe_text(last_comment)}</div>
+        <h3>4. VisitLog Details</h3>{df_to_html_table(visit_df)}
+    </body></html>
+    """
     return html.encode("utf-8")
-
 
 def create_site_card_html(selected_site, master_row_for_report, master_cols_1, master_cols_2,
     total_visit_records, total_floor_visits, submitted_reports, pending_reports,
@@ -900,520 +745,125 @@ def update_issue_in_sheet(issue_id, new_status, resolution_notes):
 def build_executive_pdf(display_df, total_floors, total_sites, total_sent, total_pending,
                          selected_month, highest_coverage_str, highest_prod_str, critical_gaps_str,
                          summary_df):
-    from reportlab.lib.units import mm
-    from reportlab.lib.enums import TA_CENTER, TA_LEFT
-    from reportlab.platypus import HRFlowable, KeepTogether, NextPageTemplate
-    from reportlab.platypus import BaseDocTemplate, Frame, PageTemplate
-
-    # ── Colors ──
-    NAVY   = colors.HexColor("#0E1B2E")
-    NAVY2  = colors.HexColor("#13243D")
-    CYAN   = colors.HexColor("#38BDF8")
-    WHITE  = colors.white
-    DARK   = colors.HexColor("#1E293B")
-    MUTED  = colors.HexColor("#94A3B8")
-    BORDER = colors.HexColor("#CBD5E1")
-    GREY_B = colors.HexColor("#F8FAFC")
-
-    GREEN_B = colors.HexColor("#DCFCE7"); GREEN_T = colors.HexColor("#15803D")
-    RED_B   = colors.HexColor("#FEE2E2"); RED_T   = colors.HexColor("#B91C1C")
-    BLUE_B  = colors.HexColor("#EFF6FF"); BLUE_T  = colors.HexColor("#1D4ED8")
-    CYAN_B  = colors.HexColor("#DBEAFE"); CYAN_T  = colors.HexColor("#0369A1")
-
-    page_w, page_h = landscape(A4)
-    margin  = 18 * mm
-    cw      = page_w - 2 * margin   # content width
-    HEAD_H  = 46 * mm
-    FOOT_H  = 10 * mm
-    ACCENT  = 2  * mm
-
+    """
+    Builds a print-ready PDF of the Executive Dashboard for monthly review meetings.
+    Returns bytes.
+    """
     buffer = io.BytesIO()
-
-    # ── Header (first page only) ──
-    def draw_first(c, doc):
-        c.saveState()
-        c.setFillColor(NAVY)
-        c.rect(0, page_h - HEAD_H, page_w, HEAD_H, fill=1, stroke=0)
-        c.setFillColor(CYAN)
-        c.rect(0, page_h - HEAD_H - ACCENT, page_w, ACCENT, fill=1, stroke=0)
-        c.setFont("Helvetica-Bold", 18)
-        c.setFillColor(WHITE)
-        c.drawString(margin, page_h - 17*mm, "HULIOT PIPES & FITTINGS PVT. LTD.")
-        c.setFont("Helvetica", 11)
-        c.setFillColor(CYAN)
-        c.drawString(margin, page_h - 28*mm, "Executive Dashboard Report  \u2014  West Zone Field Analytics")
-        c.setFont("Helvetica", 8.5)
-        c.setFillColor(MUTED)
-        rx = page_w - margin
-        c.drawRightString(rx, page_h - 15*mm, f"Period: {selected_month}")
-        c.drawRightString(rx, page_h - 24*mm, datetime.now().strftime("Generated: %d %b %Y, %H:%M"))
-        c.drawRightString(rx, page_h - 33*mm, "CONFIDENTIAL")
-        _draw_footer(c, doc)
-        c.restoreState()
-
-    # ── Footer only (subsequent pages) ──
-    def draw_later(c, doc):
-        c.saveState()
-        _draw_footer(c, doc)
-        c.restoreState()
-
-    def _draw_footer(c, doc):
-        c.setFillColor(NAVY)
-        c.rect(0, 0, page_w, FOOT_H, fill=1, stroke=0)
-        c.setFont("Helvetica", 7.5)
-        c.setFillColor(MUTED)
-        c.drawString(margin, 3.5*mm,
-                     "Huliot Pipes & Fittings Pvt. Ltd.  |  West Zone  |  CONFIDENTIAL")
-        c.drawRightString(page_w - margin, 3.5*mm, f"Page {doc.page}")
-
-    # ── Two frames: first page (shorter — room for header) and later (taller) ──
-    top_first = HEAD_H + ACCENT + 5*mm
-    bot       = FOOT_H + 5*mm
-    frame_first = Frame(margin, bot, cw, page_h - top_first - bot, id="first")
-    frame_later = Frame(margin, bot, cw, page_h - 12*mm - bot, id="later")
-
-    doc = BaseDocTemplate(
+    doc = SimpleDocTemplate(
         buffer, pagesize=landscape(A4),
-        leftMargin=margin, rightMargin=margin,
-        topMargin=top_first, bottomMargin=bot,
+        leftMargin=24, rightMargin=24, topMargin=24, bottomMargin=24
     )
-    doc.addPageTemplates([
-        PageTemplate(id="First", frames=[frame_first], onPage=draw_first),
-        PageTemplate(id="Later", frames=[frame_later], onPage=draw_later),
-    ])
-
-    # ── Styles ──
-    SEC = ParagraphStyle("SEC", fontSize=10, fontName="Helvetica-Bold",
-                         textColor=NAVY, spaceBefore=10, spaceAfter=4)
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle("TitleStyle", parent=styles["Title"], fontSize=18, textColor=colors.HexColor("#111827"))
+    sub_style = ParagraphStyle("SubStyle", parent=styles["Normal"], fontSize=10, textColor=colors.HexColor("#4b5563"))
+    h_style = ParagraphStyle("HStyle", parent=styles["Heading3"], fontSize=12, textColor=colors.HexColor("#111827"), spaceBefore=10, spaceAfter=6)
 
     elements = []
-    # Switch to Later template from page 2 onwards
-    elements.append(NextPageTemplate("Later"))
-    elements.append(Spacer(1, 4))
+    elements.append(Paragraph("Huliot West Zone - Executive Dashboard Report", title_style))
+    elements.append(Paragraph(f"Month: {selected_month}  |  Generated: {datetime.now().strftime('%d-%m-%Y %H:%M')}", sub_style))
+    elements.append(Spacer(1, 14))
 
-    # ── KPI BOXES ──
-    kpi_items = [
-        ("TOTAL FLOOR VISITS", str(total_floors), BLUE_B,  BLUE_T),
-        ("TOTAL SITE VISITS",  str(total_sites),  CYAN_B,  CYAN_T),
-        ("REPORTS SENT",       str(total_sent),   GREEN_B, GREEN_T),
-        ("PENDING REPORTS",    str(total_pending),RED_B,   RED_T),
+    # --- KPI strip ---
+    kpi_data = [
+        ["Total Floor Visits", "Total Site Visits", "Total Reports Sent", "Total Pending Reports"],
+        [str(total_floors), str(total_sites), str(total_sent), str(total_pending)]
     ]
-    kpi_col_w = cw / 4
-
-    label_row, value_row = [], []
-    for lbl, val, bg, t in kpi_items:
-        label_row.append(Paragraph(lbl, ParagraphStyle(
-            "KL", fontSize=7.5, fontName="Helvetica-Bold",
-            alignment=TA_CENTER, leading=11, textColor=t)))
-        value_row.append(Paragraph(val, ParagraphStyle(
-            "KV", fontSize=28, fontName="Helvetica-Bold",
-            alignment=TA_CENTER, leading=32, textColor=t)))
-
-    kpi_table = Table([label_row, value_row], colWidths=[kpi_col_w]*4)
-    kpi_cmds = [
-        ("ALIGN",         (0,0), (-1,-1), "CENTER"),
-        ("VALIGN",        (0,0), (-1,-1), "MIDDLE"),
-        ("TOPPADDING",    (0,0), (-1,-1), 8),
-        ("BOTTOMPADDING", (0,0), (-1,-1), 8),
-        ("LEFTPADDING",   (0,0), (-1,-1), 4),
-        ("RIGHTPADDING",  (0,0), (-1,-1), 4),
-        ("BOX",           (0,0), (-1,-1), 0.5, BORDER),
-        ("LINEBELOW",     (0,0), (-1,0),  0.5, BORDER),
-    ]
-    for i, (_, _, bg, _) in enumerate(kpi_items):
-        kpi_cmds.append(("BACKGROUND", (i,0), (i,-1), bg))
-        if i > 0:
-            kpi_cmds.append(("LINEBEFORE", (i,0), (i,-1), 0.5, BORDER))
-    kpi_table.setStyle(TableStyle(kpi_cmds))
+    kpi_table = Table(kpi_data, colWidths=[180, 180, 180, 180])
+    kpi_table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#111827")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTSIZE", (0, 0), (-1, 0), 10),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 1), (-1, 1), 18),
+        ("FONTNAME", (0, 1), (-1, 1), "Helvetica-Bold"),
+        ("BACKGROUND", (0, 1), (-1, 1), colors.HexColor("#F9FAFB")),
+        ("TEXTCOLOR", (0, 1), (-1, 1), colors.HexColor("#111827")),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#D1D5DB")),
+        ("TOPPADDING", (0, 0), (-1, -1), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+    ]))
     elements.append(kpi_table)
-    elements.append(Spacer(1, 8))
-    elements.append(HRFlowable(width="100%", thickness=0.5, color=BORDER, spaceAfter=4))
+    elements.append(Spacer(1, 16))
 
-    # ── BAR CHART ──
+    # --- Native bar chart: Reports Sent per Associate ---
     if not summary_df.empty:
-        elements.append(Paragraph("Reports Sent to Client — by Associate", SEC))
-        chart_df = summary_df.sort_values("Report sent to the client", ascending=False)
-        cats       = [str(x)[:14] for x in chart_df["Associate ID"].tolist()]
-        vals_sent  = [float(x)    for x in chart_df["Report sent to the client"].tolist()]
-        vals_floor = [float(x)    for x in chart_df["Floor Visit"].tolist()]
-        n_cats = max(len(cats), 1)
+        elements.append(Paragraph("Reports Sent to Client - by Associate", h_style))
+        chart_data = summary_df.sort_values("Report sent to the client", ascending=False)
+        cats = [str(x)[:14] for x in chart_data["Associate ID"].tolist()]
+        vals = [float(x) for x in chart_data["Report sent to the client"].tolist()]
 
-        draw_w = float(cw)
-        draw_h = 115.0
-        cl = 52.0       # chart left
-        cr = 8.0        # chart right pad
-
-        drawing = Drawing(draw_w, draw_h)
+        drawing = Drawing(700, 200)
         bc = VerticalBarChart()
-        bc.x = cl; bc.y = 22.0
-        bc.height = 80.0
-        bc.width  = draw_w - cl - cr
-        bc.data   = [vals_sent, vals_floor]
+        bc.x = 50
+        bc.y = 40
+        bc.height = 140
+        bc.width = 600
+        bc.data = [vals]
         bc.categoryAxis.categoryNames = cats
+        bc.categoryAxis.labels.angle = 30
         bc.categoryAxis.labels.fontSize = 7
-        bc.categoryAxis.labels.fontName = "Helvetica"
-        bc.categoryAxis.labels.angle    = 0 if n_cats <= 6 else 30
-        bc.categoryAxis.labels.dy = -4
-        bc.categoryAxis.labels.boxAnchor = "n" if n_cats <= 6 else "e"
+        bc.categoryAxis.labels.dx = -8
+        bc.categoryAxis.labels.dy = -10
         bc.valueAxis.valueMin = 0
-        bc.valueAxis.labels.fontSize = 7
-        bc.valueAxis.labels.fontName  = "Helvetica"
-        bc.barSpacing  = 2
-        bc.barWidth    = max(5, int(bc.width / max(n_cats * 3, 1)))
-        bc.groupSpacing= max(8, int(bc.width / max(n_cats, 1)) // 3)
-        bc.bars[0].fillColor = colors.HexColor("#3B82F6")
-        bc.bars[1].fillColor = colors.HexColor("#6366F1")
-        bc.bars[0].strokeColor = None
-        bc.bars[1].strokeColor = None
+        bc.bars[0].fillColor = colors.HexColor("#3b82f6")
         drawing.add(bc)
-
-        from reportlab.graphics.shapes import Rect as RLRect, String as RLString
-        for i, (lbl, col) in enumerate([("Reports Sent","#3B82F6"),("Floor Visits","#6366F1")]):
-            rx = cl + i * 110
-            drawing.add(RLRect(rx, 8, 10, 7,
-                               fillColor=colors.HexColor(col), strokeColor=None))
-            drawing.add(RLString(rx+14, 9, lbl, fontSize=7, fontName="Helvetica",
-                                 fillColor=colors.HexColor("#374151")))
         elements.append(drawing)
-        elements.append(Spacer(1, 6))
-        elements.append(HRFlowable(width="100%", thickness=0.5, color=BORDER, spaceAfter=4))
+        elements.append(Spacer(1, 10))
 
-    # ── PERFORMANCE TABLE ──
-    elements.append(Paragraph("Detailed Performance Breakdown", SEC))
+    # --- Detailed performance table ---
+    elements.append(Paragraph("Detailed Performance Breakdown", h_style))
     table_cols = [c for c in [
-        "Associate ID", "Floor Visit", "Site Tower visit",
-        "Report Mark (YES)", "Suggestion Visit (NO)",
-        "Report Pending", "Report sent to the client"
+        "Associate ID", "Floor Visit", "Site Tower visit", "Report Mark (YES)",
+        "Suggestion Visit (NO)", "Report Pending", "Report sent to the client"
     ] if c in display_df.columns]
 
-    short_h = {
-        "Associate ID": "Associate",         "Floor Visit": "Floors",
-        "Site Tower visit": "Sites",          "Report Mark (YES)": "YES",
-        "Suggestion Visit (NO)": "Sugg(NO)", "Report Pending": "Pending",
-        "Report sent to the client": "Sent"
-    }
-    TH = ParagraphStyle("TH",  fontSize=8, fontName="Helvetica-Bold",
-                         textColor=WHITE,   alignment=TA_CENTER)
-    TDL= ParagraphStyle("TDL", fontSize=8, fontName="Helvetica",
-                         textColor=DARK,    alignment=TA_LEFT)
-    TDC= ParagraphStyle("TDC", fontSize=8, fontName="Helvetica",
-                         textColor=DARK,    alignment=TA_CENTER)
-
-    hdr_row = [Paragraph(short_h.get(c, c), TH) for c in table_cols]
-    perf_data = [hdr_row]
+    table_data = [table_cols]
     for _, row in display_df[table_cols].astype(str).iterrows():
-        perf_data.append([
-            Paragraph(row[c], TDL if ci == 0 else TDC)
-            for ci, c in enumerate(table_cols)
-        ])
+        table_data.append(list(row))
 
-    first_col_w = 95
-    other_col_w = (cw - first_col_w) / max(len(table_cols) - 1, 1)
-    col_ws = [first_col_w] + [other_col_w] * (len(table_cols) - 1)
-
-    last_r = len(perf_data) - 1
-    perf_cmds = [
-        ("BACKGROUND",    (0,0),  (-1,0),           NAVY),
-        ("ALIGN",         (0,0),  (-1,-1),           "CENTER"),
-        ("ALIGN",         (0,0),  (0,-1),            "LEFT"),
-        ("VALIGN",        (0,0),  (-1,-1),           "MIDDLE"),
-        ("TOPPADDING",    (0,0),  (-1,-1),           5),
-        ("BOTTOMPADDING", (0,0),  (-1,-1),           5),
-        ("LEFTPADDING",   (0,0),  (-1,-1),           5),
-        ("RIGHTPADDING",  (0,0),  (-1,-1),           5),
-        ("GRID",          (0,0),  (-1,-1),           0.3, BORDER),
-        ("BACKGROUND",    (0,last_r), (-1,last_r),   NAVY2),
-        ("FONTNAME",      (0,last_r), (-1,last_r),   "Helvetica-Bold"),
+    perf_table = Table(table_data, repeatRows=1, colWidths=[110] + [85] * (len(table_cols) - 1))
+    table_style_cmds = [
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#111827")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ("ALIGN", (1, 0), (-1, -1), "CENTER"),
+        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#D1D5DB")),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
     ]
-    for ri in range(1, last_r):
-        perf_cmds.append(("BACKGROUND", (0,ri), (-1,ri),
-                           WHITE if ri % 2 == 1 else GREY_B))
-    for ri in range(1, last_r + 1):
-        if ri == last_r:
-            tc = WHITE
-        else:
-            tc = DARK
-        perf_cmds.append(("TEXTCOLOR", (0,ri), (-1,ri), tc))
-
-    perf_table = Table(perf_data, colWidths=col_ws, repeatRows=1)
-    perf_table.setStyle(TableStyle(perf_cmds))
+    last_row_idx = len(table_data) - 1
+    table_style_cmds.append(("BACKGROUND", (0, last_row_idx), (-1, last_row_idx), colors.HexColor("#F3F4F6")))
+    table_style_cmds.append(("FONTNAME", (0, last_row_idx), (-1, last_row_idx), "Helvetica-Bold"))
+    perf_table.setStyle(TableStyle(table_style_cmds))
     elements.append(perf_table)
-    elements.append(Spacer(1, 10))
-    elements.append(HRFlowable(width="100%", thickness=0.5, color=BORDER, spaceAfter=4))
+    elements.append(Spacer(1, 16))
 
-    # ── HIGHLIGHTS ──
-    elements.append(Paragraph("Performance Highlights", SEC))
-    hl_items = [
-        ("Highest Coverage",     highest_coverage_str, BLUE_B,  BLUE_T),
-        ("Highest Productivity", highest_prod_str,     GREEN_B, GREEN_T),
-        ("Critical Gaps",        critical_gaps_str,    RED_B,   RED_T),
+    # --- Highlights ---
+    elements.append(Paragraph("Highlights", h_style))
+    highlight_data = [
+        ["Highest Coverage", highest_coverage_str],
+        ["Highest Productivity", highest_prod_str],
+        ["Critical Gaps", critical_gaps_str],
     ]
-    hl_col_w = cw / 3
-    hl_lbl_row = [Paragraph(lbl, ParagraphStyle(
-        "HLL", fontSize=8, fontName="Helvetica-Bold",
-        alignment=TA_CENTER, textColor=t)) for lbl, _, _, t in hl_items]
-    hl_val_row = [Paragraph(val, ParagraphStyle(
-        "HLV", fontSize=8.5, fontName="Helvetica",
-        alignment=TA_CENTER, textColor=DARK)) for _, val, _, _ in hl_items]
-
-    hl_table = Table([hl_lbl_row, hl_val_row], colWidths=[hl_col_w]*3)
-    hl_cmds = [
-        ("ALIGN",         (0,0), (-1,-1), "CENTER"),
-        ("VALIGN",        (0,0), (-1,-1), "MIDDLE"),
-        ("TOPPADDING",    (0,0), (-1,-1), 9),
-        ("BOTTOMPADDING", (0,0), (-1,-1), 9),
-        ("LEFTPADDING",   (0,0), (-1,-1), 8),
-        ("RIGHTPADDING",  (0,0), (-1,-1), 8),
-        ("BOX",           (0,0), (-1,-1), 0.5, BORDER),
-        ("LINEBELOW",     (0,0), (-1,0),  0.5, BORDER),
-        ("LINEBEFORE",    (1,0), (2,-1),  0.5, BORDER),
-    ]
-    for i, (_, _, bg, _) in enumerate(hl_items):
-        hl_cmds.append(("BACKGROUND", (i,0), (i,-1), bg))
-    hl_table.setStyle(TableStyle(hl_cmds))
-    elements.append(KeepTogether([hl_table]))
+    hl_table = Table(highlight_data, colWidths=[160, 600])
+    hl_table.setStyle(TableStyle([
+        ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#D1D5DB")),
+        ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#F9FAFB")),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+    ]))
+    elements.append(hl_table)
 
     doc.build(elements)
     buffer.seek(0)
     return buffer.getvalue()
-
-
-def build_executive_html_report(display_df, total_floors, total_sites, total_sent, total_pending,
-                                  selected_month, highest_coverage_str, highest_prod_str, critical_gaps_str,
-                                  summary_df):
-    """
-    Professional self-contained HTML executive report with Chart.js charts.
-    Open in browser → Ctrl+P → Save as PDF = native quality.
-    Returns bytes (UTF-8 encoded HTML).
-    """
-    import json as _json
-
-    # ── Prepare chart JSON data ──
-    assoc_data = []
-    if not summary_df.empty:
-        cdf = summary_df.sort_values("Report sent to the client", ascending=False)
-        for _, r in cdf.iterrows():
-            assoc_data.append({
-                "name":    str(r.get("Associate ID", "")),
-                "sent":    int(r.get("Report sent to the client", 0)),
-                "floors":  int(r.get("Floor Visit", 0)),
-                "sites":   int(r.get("Site Tower visit", 0)),
-                "pending": int(r.get("Report Pending", 0)),
-            })
-
-    # ── Table HTML ──
-    table_cols = [c for c in [
-        "Associate ID", "Floor Visit", "Site Tower visit",
-        "Report Mark (YES)", "Suggestion Visit (NO)",
-        "Report Pending", "Report sent to the client"
-    ] if c in display_df.columns]
-
-    short = {
-        "Associate ID": "Associate",         "Floor Visit": "Floors",
-        "Site Tower visit": "Sites",          "Report Mark (YES)": "YES",
-        "Suggestion Visit (NO)": "Sugg(NO)", "Report Pending": "Pending",
-        "Report sent to the client": "Sent to Client"
-    }
-
-    thead = "".join(f'<th style="text-align:{"left" if i==0 else "center"}">'
-                    f'{escape(short.get(c,c))}</th>'
-                    for i, c in enumerate(table_cols))
-
-    tbody = ""
-    for ri, (_, row) in enumerate(display_df[table_cols].astype(str).iterrows()):
-        is_total = str(row.get("Associate ID","")).upper().startswith("TEAM")
-        cls = "tr-total" if is_total else ("tr-odd" if ri % 2 == 0 else "")
-        tbody += f"<tr class='{cls}'>"
-        for ci, c in enumerate(table_cols):
-            align = "left" if ci == 0 else "center"
-            tbody += f'<td style="text-align:{align}">{escape(str(row[c]))}</td>'
-        tbody += "</tr>"
-
-    gen_time = datetime.now().strftime("%d %b %Y, %H:%M")
-
-    html = f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Huliot Executive Report — {escape(selected_month)}</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1" crossorigin="anonymous"></script>
-<style>
-  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-  *,*::before,*::after{{box-sizing:border-box;margin:0;padding:0}}
-  body{{font-family:'Inter',-apple-system,sans-serif;font-size:12px;color:#1E293B;background:#F1F5F9;line-height:1.5}}
-  .page{{max-width:1120px;margin:24px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,0.14)}}
-
-  /* HEADER */
-  .hdr{{background:linear-gradient(135deg,#0E1B2E 0%,#1E3A5F 100%);padding:22px 30px 18px;display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #38BDF8}}
-  .hdr-l .co{{font-size:13px;font-weight:700;letter-spacing:.06em;color:#fff;margin-bottom:3px}}
-  .hdr-l .rt{{font-size:10px;color:#38BDF8;font-weight:600;margin-bottom:10px}}
-  .hdr-l .per{{font-size:26px;font-weight:700;color:#F8FAFC;letter-spacing:-.01em}}
-  .hdr-r{{text-align:right}}
-  .badge{{display:inline-block;background:rgba(56,189,248,.18);border:1px solid rgba(56,189,248,.45);color:#7DD3FC;font-size:9px;font-weight:700;padding:3px 10px;border-radius:4px;margin-bottom:8px;letter-spacing:.07em}}
-  .meta{{font-size:9.5px;color:rgba(255,255,255,.5);margin-top:3px}}
-
-  /* LAYOUT */
-  .body{{padding:24px 30px}}
-  .sec-title{{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#64748B;border-bottom:1px solid #E2E8F0;padding-bottom:5px;margin:20px 0 12px}}
-
-  /* KPI STRIP */
-  .kpi-row{{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}}
-  .kpi{{border-radius:10px;padding:14px 16px;border:1px solid}}
-  .kpi.b{{background:#EFF6FF;border-color:#BFDBFE}}
-  .kpi.c{{background:#E0F2FE;border-color:#BAE6FD}}
-  .kpi.g{{background:#F0FDF4;border-color:#BBF7D0}}
-  .kpi.r{{background:#FEF2F2;border-color:#FECACA}}
-  .kpi-lbl{{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px}}
-  .kpi.b .kpi-lbl{{color:#1D4ED8}} .kpi.c .kpi-lbl{{color:#0369A1}}
-  .kpi.g .kpi-lbl{{color:#15803D}} .kpi.r .kpi-lbl{{color:#B91C1C}}
-  .kpi-val{{font-size:34px;font-weight:700;line-height:1;margin-bottom:3px}}
-  .kpi.b .kpi-val{{color:#1E40AF}} .kpi.c .kpi-val{{color:#0C4A6E}}
-  .kpi.g .kpi-val{{color:#166534}} .kpi.r .kpi-val{{color:#991B1B}}
-  .kpi-sub{{font-size:9.5px;color:#64748B}}
-
-  /* CHARTS */
-  .chart-row{{display:grid;grid-template-columns:2fr 1fr;gap:14px;margin-bottom:20px}}
-  .chart-box{{background:#F8FAFC;border:1px solid #E2E8F0;border-radius:10px;padding:16px 18px}}
-  .chart-box h3{{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#374151;margin-bottom:12px}}
-
-  /* TABLE */
-  .tbl-wrap{{border:1px solid #E2E8F0;border-radius:10px;overflow:hidden;margin-bottom:20px}}
-  table{{width:100%;border-collapse:collapse;font-size:11px}}
-  thead th{{background:#0E1B2E;color:#fff;padding:9px 10px;font-weight:600;font-size:9.5px;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap}}
-  tbody td{{padding:8px 10px;border-bottom:1px solid #F1F5F9;color:#1E293B}}
-  .tr-odd td{{background:#F8FAFC}}
-  .tr-total td{{background:#0E1B2E!important;color:#fff!important;font-weight:700}}
-  tbody tr:last-child td{{border-bottom:none}}
-
-  /* HIGHLIGHTS */
-  .hl-row{{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px}}
-  .hl{{border-radius:10px;padding:14px 16px;border:1px solid}}
-  .hl.b{{background:#EFF6FF;border-color:#BFDBFE}} .hl.g{{background:#F0FDF4;border-color:#BBF7D0}} .hl.r{{background:#FEF2F2;border-color:#FECACA}}
-  .hl-lbl{{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px}}
-  .hl.b .hl-lbl{{color:#1D4ED8}} .hl.g .hl-lbl{{color:#15803D}} .hl.r .hl-lbl{{color:#B91C1C}}
-  .hl-val{{font-size:12px;font-weight:600;color:#1E293B;line-height:1.4}}
-
-  /* PRINT BUTTON */
-  .print-bar{{background:#F8FAFC;border-top:1px solid #E2E8F0;padding:10px 30px;display:flex;justify-content:flex-end;gap:10px}}
-  .print-btn{{background:#0E1B2E;color:#fff;border:none;padding:8px 18px;border-radius:7px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit}}
-  .print-btn:hover{{background:#1E3A5F}}
-
-  /* FOOTER */
-  .ftr{{background:#0E1B2E;color:rgba(255,255,255,.5);font-size:9px;padding:9px 30px;display:flex;justify-content:space-between}}
-  .ftr strong{{color:rgba(255,255,255,.8)}}
-
-  @media print{{
-    body{{background:#fff}} .page{{box-shadow:none;margin:0;border-radius:0;max-width:none}} .print-bar{{display:none}}
-    body{{-webkit-print-color-adjust:exact;print-color-adjust:exact;color-adjust:exact}}
-  }}
-  @page{{size:A4 landscape;margin:10mm 12mm}}
-</style>
-</head>
-<body>
-<div class="page">
-
-<div class="hdr">
-  <div class="hdr-l">
-    <div class="co">HULIOT PIPES &amp; FITTINGS PVT. LTD.</div>
-    <div class="rt">Executive Dashboard Report &nbsp;·&nbsp; West Zone Field Analytics</div>
-    <div class="per">{escape(selected_month)}</div>
-  </div>
-  <div class="hdr-r">
-    <div class="badge">CONFIDENTIAL</div>
-    <div class="meta">Generated: {gen_time}</div>
-    <div class="meta">West Zone &nbsp;·&nbsp; Field Team Analytics</div>
-  </div>
-</div>
-
-<div class="print-bar">
-  <button class="print-btn" onclick="window.print()">🖨️ Print / Save as PDF</button>
-</div>
-
-<div class="body">
-
-  <div class="sec-title">Key Performance Indicators</div>
-  <div class="kpi-row">
-    <div class="kpi b"><div class="kpi-lbl">Floor Visits</div><div class="kpi-val">{total_floors}</div><div class="kpi-sub">Total floors inspected</div></div>
-    <div class="kpi c"><div class="kpi-lbl">Site Visits</div><div class="kpi-val">{total_sites}</div><div class="kpi-sub">Tower / site entries</div></div>
-    <div class="kpi g"><div class="kpi-lbl">Reports Sent</div><div class="kpi-val">{total_sent}</div><div class="kpi-sub">Delivered to clients</div></div>
-    <div class="kpi r"><div class="kpi-lbl">Pending</div><div class="kpi-val">{total_pending}</div><div class="kpi-sub">Reports outstanding</div></div>
-  </div>
-
-  <div class="sec-title">Performance Charts</div>
-  <div class="chart-row">
-    <div class="chart-box">
-      <h3>Reports Sent &amp; Floor Visits — by Associate</h3>
-      <canvas id="barChart" height="110"></canvas>
-    </div>
-    <div class="chart-box">
-      <h3>Report Status Breakdown</h3>
-      <canvas id="donutChart" height="110"></canvas>
-    </div>
-  </div>
-
-  <div class="sec-title">Detailed Performance Breakdown</div>
-  <div class="tbl-wrap">
-    <table><thead><tr>{thead}</tr></thead><tbody>{tbody}</tbody></table>
-  </div>
-
-  <div class="sec-title">Performance Highlights</div>
-  <div class="hl-row">
-    <div class="hl b"><div class="hl-lbl">🌎 Highest Coverage</div><div class="hl-val">{escape(str(highest_coverage_str))}</div></div>
-    <div class="hl g"><div class="hl-lbl">🚀 Highest Productivity</div><div class="hl-val">{escape(str(highest_prod_str))}</div></div>
-    <div class="hl r"><div class="hl-lbl">⏳ Critical Gaps</div><div class="hl-val">{escape(str(critical_gaps_str))}</div></div>
-  </div>
-
-</div>
-
-<div class="ftr">
-  <span><strong>Huliot Pipes &amp; Fittings Pvt. Ltd.</strong> &nbsp;·&nbsp; West Zone Field Analytics</span>
-  <span>Period: {escape(selected_month)} &nbsp;·&nbsp; Generated: {gen_time} &nbsp;·&nbsp; CONFIDENTIAL</span>
-</div>
-
-</div>
-<script>
-const A={_json.dumps(assoc_data, ensure_ascii=False)};
-// Bar chart
-new Chart(document.getElementById('barChart').getContext('2d'),{{
-  type:'bar',
-  data:{{
-    labels:A.map(d=>d.name),
-    datasets:[
-      {{label:'Reports Sent',data:A.map(d=>d.sent),backgroundColor:'#3B82F6',borderRadius:4,borderSkipped:false}},
-      {{label:'Floor Visits',data:A.map(d=>d.floors),backgroundColor:'#6366F1',borderRadius:4,borderSkipped:false}}
-    ]
-  }},
-  options:{{
-    responsive:true,maintainAspectRatio:false,
-    plugins:{{legend:{{position:'top',labels:{{font:{{size:10}},padding:12,boxWidth:12}}}}}},
-    scales:{{
-      x:{{grid:{{display:false}},ticks:{{font:{{size:10}}}}}},
-      y:{{grid:{{color:'#F1F5F9'}},ticks:{{font:{{size:10}}}}}}
-    }}
-  }}
-}});
-// Donut chart
-new Chart(document.getElementById('donutChart').getContext('2d'),{{
-  type:'doughnut',
-  data:{{
-    labels:['Submitted','Pending','Tech NA'],
-    datasets:[{{
-      data:[{total_sent},{total_pending},Math.max({total_floors}-{total_sent}-{total_pending},0)],
-      backgroundColor:['#22C55E','#EF4444','#94A3B8'],
-      borderWidth:0,hoverOffset:4
-    }}]
-  }},
-  options:{{
-    responsive:true,maintainAspectRatio:false,cutout:'62%',
-    plugins:{{legend:{{position:'bottom',labels:{{font:{{size:10}},padding:10,boxWidth:12}}}}}}
-  }}
-}});
-</script>
-</body>
-</html>"""
-
-    return html.encode("utf-8")
 
 
 def build_scanned_issues_excel(result_df):
@@ -1842,74 +1292,30 @@ with tab_visits:
         st.markdown("---")
 
         chart_col1, chart_col2 = st.columns(2)
-
-        # ── Chart click-filter state (Tab 1) ──
-        if "t1_reset_ctr" not in st.session_state:
-            st.session_state["t1_reset_ctr"] = 0
-        _t1 = st.session_state["t1_reset_ctr"]
-        t1_sel_month = st.session_state.get(f"t1_month_{_t1}")
-        t1_sel_site  = st.session_state.get(f"t1_site_{_t1}")
-
         with chart_col1:
             with st.container(border=True):
                 st.markdown("##### Visits Per Month")
-                st.caption("👆 Click a bar to filter Visit Records below")
                 month_counts = filtered_v["Month"].value_counts().reset_index()
                 month_counts.columns = ["Month", "Visits"]
                 fig1 = px.bar(month_counts, x="Month", y="Visits", color_discrete_sequence=["#6366f1"])
-                ev1 = st.plotly_chart(fig1, use_container_width=True, key=f"chart_t1_month_{_t1}",
-                                      on_select="rerun", selection_mode="points")
-                if ev1 and ev1.get("selection", {}).get("points"):
-                    _clicked = ev1["selection"]["points"][0].get("x")
-                    if _clicked and _clicked != t1_sel_month:
-                        st.session_state[f"t1_month_{_t1}"] = _clicked
-                        st.rerun()
-
+                st.plotly_chart(fig1, use_container_width=True, key="chart_t1_month")
         with chart_col2:
             with st.container(border=True):
                 st.markdown("##### Top Sites / Zones")
-                st.caption("👆 Click a slice to filter Visit Records below")
                 if site_col:
                     site_counts = filtered_v[site_col].value_counts().nlargest(6).reset_index()
                     site_counts.columns = ["Site Name", "Visits"]
                     fig2 = px.pie(site_counts, names="Site Name", values="Visits", hole=0.4,
-                        color_discrete_sequence=["#6366f1","#14b8a6","#f59e0b","#f43f5e","#8b5cf6","#0ea5e9"])
-                    ev2 = st.plotly_chart(fig2, use_container_width=True, key=f"chart_t1_pie_{_t1}",
-                                          on_select="rerun", selection_mode="points")
-                    if ev2 and ev2.get("selection", {}).get("points"):
-                        _clicked_s = ev2["selection"]["points"][0].get("label")
-                        if _clicked_s and _clicked_s != t1_sel_site:
-                            st.session_state[f"t1_site_{_t1}"] = _clicked_s
-                            st.rerun()
-
-        # ── Apply chart-click additional filter to table ──
-        table_v = filtered_v.copy()
-        active_t1 = []
-        if t1_sel_month:
-            table_v = table_v[table_v["Month"].astype(str) == t1_sel_month]
-            active_t1.append(f"Month: {t1_sel_month}")
-        if t1_sel_site and site_col:
-            table_v = table_v[table_v[site_col].astype(str) == t1_sel_site]
-            active_t1.append(f"Site: {t1_sel_site}")
-
-        if active_t1:
-            _fc1, _fc2 = st.columns([5, 1])
-            with _fc1:
-                st.info(f"🔎 Chart filter: **{' | '.join(active_t1)}** — {len(table_v)} records")
-            with _fc2:
-                if st.button("✖ Clear", key="clear_t1_chart", use_container_width=True):
-                    st.session_state["t1_reset_ctr"] += 1
-                    st.rerun()
-        else:
-            table_v = filtered_v.copy()
+                        color_discrete_sequence=["#6366f1", "#14b8a6", "#f59e0b", "#f43f5e", "#8b5cf6", "#0ea5e9"])
+                    st.plotly_chart(fig2, use_container_width=True, key="chart_t1_pie")
 
         st.subheader("Visit Records")
         display_cols = []
         for c in ["Source Sheet", "Visit ID", site_col, "Tower Name", "FloorsVisited", "Floors Visited",
                   assoc_col, "Date of Visit", "Status", "Report Submitted Date", "Comment"]:
-            if c and c in table_v.columns and c not in display_cols:
+            if c and c in filtered_v.columns and c not in display_cols:
                 display_cols.append(c)
-        st.dataframe(table_v[display_cols].astype(str), use_container_width=True, hide_index=True)
+        st.dataframe(filtered_v[display_cols].astype(str), use_container_width=True, hide_index=True)
 
         # ── AI Comment Analyzer ──
         st.markdown("---")
@@ -2127,68 +1533,26 @@ with tab_master:
         st.markdown("---")
 
         m_chart1, m_chart2 = st.columns(2)
-
-        # ── Chart click-filter state (Tab 2) ──
-        if "t2_reset_ctr" not in st.session_state:
-            st.session_state["t2_reset_ctr"] = 0
-        _t2 = st.session_state["t2_reset_ctr"]
-        t2_sel_state  = st.session_state.get(f"t2_state_{_t2}")
-        t2_sel_status = st.session_state.get(f"t2_status_{_t2}")
-
         with m_chart1:
             with st.container(border=True):
                 st.markdown("##### Projects by State")
-                st.caption("👆 Click a bar to filter table below")
                 if col_state:
                     state_c = filtered_m[col_state].value_counts().reset_index()
                     state_c.columns = ["State", "Count"]
                     fig3 = px.bar(state_c, x="State", y="Count", color_discrete_sequence=["#14b8a6"])
-                    ev3 = st.plotly_chart(fig3, use_container_width=True, key=f"chart_t2_state_{_t2}",
-                                          on_select="rerun", selection_mode="points")
-                    if ev3 and ev3.get("selection", {}).get("points"):
-                        _cs = ev3["selection"]["points"][0].get("x")
-                        if _cs and _cs != t2_sel_state:
-                            st.session_state[f"t2_state_{_t2}"] = _cs
-                            st.rerun()
-
+                    st.plotly_chart(fig3, use_container_width=True, key="chart_t2_state")
         with m_chart2:
             with st.container(border=True):
                 st.markdown("##### Project Status")
-                st.caption("👆 Click a slice to filter table below")
                 if col_stat:
                     stat_c = filtered_m[col_stat].value_counts().reset_index()
                     stat_c.columns = ["Status", "Count"]
                     fig4 = px.pie(stat_c, names="Status", values="Count", hole=0.4,
-                        color_discrete_sequence=["#6366f1","#14b8a6","#f59e0b","#f43f5e"])
-                    ev4 = st.plotly_chart(fig4, use_container_width=True, key=f"chart_t2_pie_{_t2}",
-                                          on_select="rerun", selection_mode="points")
-                    if ev4 and ev4.get("selection", {}).get("points"):
-                        _cst = ev4["selection"]["points"][0].get("label")
-                        if _cst and _cst != t2_sel_status:
-                            st.session_state[f"t2_status_{_t2}"] = _cst
-                            st.rerun()
-
-        # ── Apply chart-click filter to master table ──
-        table_m = filtered_m.copy()
-        active_t2 = []
-        if t2_sel_state and col_state:
-            table_m = table_m[table_m[col_state].astype(str) == t2_sel_state]
-            active_t2.append(f"State: {t2_sel_state}")
-        if t2_sel_status and col_stat:
-            table_m = table_m[table_m[col_stat].astype(str) == t2_sel_status]
-            active_t2.append(f"Status: {t2_sel_status}")
-
-        if active_t2:
-            _mc1, _mc2 = st.columns([5, 1])
-            with _mc1:
-                st.info(f"🔎 Chart filter: **{' | '.join(active_t2)}** — {len(table_m)} projects")
-            with _mc2:
-                if st.button("✖ Clear", key="clear_t2_chart", use_container_width=True):
-                    st.session_state["t2_reset_ctr"] += 1
-                    st.rerun()
+                        color_discrete_sequence=["#6366f1", "#14b8a6", "#f59e0b", "#f43f5e"])
+                    st.plotly_chart(fig4, use_container_width=True, key="chart_t2_pie")
 
         st.subheader("Master Projects Directory")
-        st.dataframe(table_m.astype(str), use_container_width=True, hide_index=True)
+        st.dataframe(filtered_m.astype(str), use_container_width=True, hide_index=True)
 
 # ==========================================
 # TAB 3: EXECUTIVE DASHBOARD
@@ -2343,36 +1707,22 @@ with tab_exec:
                     st.markdown(f'<div class="highlight-card card-red"><div class="card-title">⏳ Critical Gaps</div><div class="card-value">{critical_gaps_str}</div></div>', unsafe_allow_html=True)
 
                 st.markdown("---")
-                dl_c1, dl_c2, dl_c3 = st.columns([1, 1, 2])
-                with dl_c1:
-                    html_rpt_bytes = build_executive_html_report(
-                        display_df, total_floors, total_sites, total_sent, total_pending,
-                        selected_month, highest_coverage_str, highest_prod_str, critical_gaps_str,
-                        summary_df
-                    )
-                    st.download_button(
-                        "📊 Download Report (HTML)",
-                        data=html_rpt_bytes,
-                        file_name=f"Executive_Report_{selected_month.replace(' ','_')}_{datetime.now().strftime('%d%m%Y')}.html",
-                        mime="text/html",
-                        key="dl_exec_html"
-                    )
-                with dl_c2:
+                pdf_col1, pdf_col2 = st.columns([1, 3])
+                with pdf_col1:
                     pdf_bytes = build_executive_pdf(
                         display_df, total_floors, total_sites, total_sent, total_pending,
                         selected_month, highest_coverage_str, highest_prod_str, critical_gaps_str,
                         summary_df
                     )
                     st.download_button(
-                        "📄 Download PDF",
+                        "📄 Download PDF Report",
                         data=pdf_bytes,
-                        file_name=f"Executive_Dashboard_{selected_month.replace(' ','_')}_{datetime.now().strftime('%d%m%Y')}.pdf",
+                        file_name=f"Executive_Dashboard_{selected_month.replace(' ', '_')}_{datetime.now().strftime('%d%m%Y')}.pdf",
                         mime="application/pdf",
                         key="dl_exec_pdf"
                     )
-                with dl_c3:
-                    st.caption("**HTML Report** = open in browser → click 🖨️ Print → Save as PDF. Best quality, professional charts, Huliot branded.\n\n**PDF** = direct download, basic charts.")
-
+                with pdf_col2:
+                    st.caption("Print-ready PDF — KPIs, chart, full breakdown table, highlights. Ready for monthly review meeting.")
 
 # ==========================================
 # TAB 4: SITE REPORT CARD
@@ -2546,55 +1896,10 @@ with tab_site_card:
                     master_download_df = site_master.copy()
                     st.dataframe(master_download_df.astype(str), use_container_width=True, hide_index=True)
 
-                # ── Downloads use FULL unfiltered site_visits (all history) ──
-                # On-screen card/table uses filtered view; downloads = complete record
-                all_visit_cols = []
-                for c in ["Source Sheet", "Visit ID", visit_site_col, tower_col_site, floor_col_site,
-                          assoc_col_site, date_col_site, "Is Report Visit?", "Status",
-                          "Report Submitted Date", comment_col_site, "CreatedAt"]:
-                    if c and c in site_visits.columns and c not in all_visit_cols:
-                        all_visit_cols.append(c)
-                download_visit_df = site_visits[all_visit_cols].copy() if all_visit_cols else site_visits.copy()
-
-                # Full summary (all data) for download
-                dl_total_visit    = len(site_visits)
-                dl_total_floors   = int(site_visits["Num_Floors"].sum()) if "Num_Floors" in site_visits.columns else 0
-                dl_submitted      = len(site_visits[site_visits["Status"] == "Submitted"]) if "Status" in site_visits.columns else 0
-                dl_pending        = len(site_visits[site_visits["Status"] == "Pending"])   if "Status" in site_visits.columns else 0
-                dl_tech_na        = len(site_visits[site_visits["Status"] == "Technical (NA)"]) if "Status" in site_visits.columns else 0
-                dl_towers         = site_visits[tower_col_site].nunique() if tower_col_site else 0
-
-                # Last visit from full data
-                dl_last_date = dl_last_by = dl_last_comment = "-"
-                if not site_visits.empty:
-                    sv_sorted = site_visits.sort_values("Date Parsed", ascending=False) if "Date Parsed" in site_visits.columns else site_visits
-                    dl_last_row = sv_sorted.iloc[0]
-                    if date_col_site:    dl_last_date    = dl_last_row.get(date_col_site, "-")
-                    if assoc_col_site:   dl_last_by      = dl_last_row.get(assoc_col_site, "-")
-                    if comment_col_site: dl_last_comment = dl_last_row.get(comment_col_site, "-")
-
-                dl_summary_df = pd.DataFrame([{
-                    "Site Name": selected_site,
-                    "Total Visit Records": dl_total_visit,
-                    "Total Floor Visits": dl_total_floors,
-                    "Submitted Reports": dl_submitted,
-                    "Pending Reports": dl_pending,
-                    "Technical NA": dl_tech_na,
-                    "Total Towers": dl_towers,
-                    "Last Visit Date": dl_last_date,
-                    "Last Visit By": dl_last_by
-                }])
-
-                dl_master_row = master_row_for_report.copy()
-                dl_master_row["Last Visit Date"] = dl_last_date
-                dl_master_row["Last Visit By"]   = dl_last_by
-
-                st.markdown("---")
-                st.caption("📥 Downloads include **complete visit history** for this site (not filtered by Month/Tower above)")
                 safe_file_name = selected_site.replace("/", "_").replace("\\", "_").replace(" ", "_")
-                excel_file = create_excel_compatible_report(selected_site, master_download_df, download_visit_df, dl_summary_df, dl_last_comment)
-                html_file  = create_print_html_report(selected_site, dl_master_row, master_cols_1, master_cols_2, dl_summary_df, download_visit_df, dl_last_comment)
-                csv_file   = download_visit_df.to_csv(index=False).encode("utf-8")
+                excel_file = create_excel_compatible_report(selected_site, master_download_df, visit_display_df, summary_df, last_visit_comment)
+                html_file  = create_print_html_report(selected_site, master_row_for_report, master_cols_1, master_cols_2, summary_df, visit_display_df, last_visit_comment)
+                csv_file   = visit_display_df.to_csv(index=False).encode("utf-8")
 
                 d1, d2, d3 = st.columns(3)
                 with d1:
