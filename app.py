@@ -1178,6 +1178,244 @@ def build_executive_pdf(display_df, total_floors, total_sites, total_sent, total
     return buffer.getvalue()
 
 
+def build_executive_html_report(display_df, total_floors, total_sites, total_sent, total_pending,
+                                  selected_month, highest_coverage_str, highest_prod_str, critical_gaps_str,
+                                  summary_df):
+    """
+    Professional self-contained HTML executive report with Chart.js charts.
+    Open in browser → Ctrl+P → Save as PDF = native quality.
+    Returns bytes (UTF-8 encoded HTML).
+    """
+    import json as _json
+
+    # ── Prepare chart JSON data ──
+    assoc_data = []
+    if not summary_df.empty:
+        cdf = summary_df.sort_values("Report sent to the client", ascending=False)
+        for _, r in cdf.iterrows():
+            assoc_data.append({
+                "name":    str(r.get("Associate ID", "")),
+                "sent":    int(r.get("Report sent to the client", 0)),
+                "floors":  int(r.get("Floor Visit", 0)),
+                "sites":   int(r.get("Site Tower visit", 0)),
+                "pending": int(r.get("Report Pending", 0)),
+            })
+
+    # ── Table HTML ──
+    table_cols = [c for c in [
+        "Associate ID", "Floor Visit", "Site Tower visit",
+        "Report Mark (YES)", "Suggestion Visit (NO)",
+        "Report Pending", "Report sent to the client"
+    ] if c in display_df.columns]
+
+    short = {
+        "Associate ID": "Associate",         "Floor Visit": "Floors",
+        "Site Tower visit": "Sites",          "Report Mark (YES)": "YES",
+        "Suggestion Visit (NO)": "Sugg(NO)", "Report Pending": "Pending",
+        "Report sent to the client": "Sent to Client"
+    }
+
+    thead = "".join(f'<th style="text-align:{"left" if i==0 else "center"}">'
+                    f'{escape(short.get(c,c))}</th>'
+                    for i, c in enumerate(table_cols))
+
+    tbody = ""
+    for ri, (_, row) in enumerate(display_df[table_cols].astype(str).iterrows()):
+        is_total = str(row.get("Associate ID","")).upper().startswith("TEAM")
+        cls = "tr-total" if is_total else ("tr-odd" if ri % 2 == 0 else "")
+        tbody += f"<tr class='{cls}'>"
+        for ci, c in enumerate(table_cols):
+            align = "left" if ci == 0 else "center"
+            tbody += f'<td style="text-align:{align}">{escape(str(row[c]))}</td>'
+        tbody += "</tr>"
+
+    gen_time = datetime.now().strftime("%d %b %Y, %H:%M")
+
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Huliot Executive Report — {escape(selected_month)}</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1" crossorigin="anonymous"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+  *,*::before,*::after{{box-sizing:border-box;margin:0;padding:0}}
+  body{{font-family:'Inter',-apple-system,sans-serif;font-size:12px;color:#1E293B;background:#F1F5F9;line-height:1.5}}
+  .page{{max-width:1120px;margin:24px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,0.14)}}
+
+  /* HEADER */
+  .hdr{{background:linear-gradient(135deg,#0E1B2E 0%,#1E3A5F 100%);padding:22px 30px 18px;display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #38BDF8}}
+  .hdr-l .co{{font-size:13px;font-weight:700;letter-spacing:.06em;color:#fff;margin-bottom:3px}}
+  .hdr-l .rt{{font-size:10px;color:#38BDF8;font-weight:600;margin-bottom:10px}}
+  .hdr-l .per{{font-size:26px;font-weight:700;color:#F8FAFC;letter-spacing:-.01em}}
+  .hdr-r{{text-align:right}}
+  .badge{{display:inline-block;background:rgba(56,189,248,.18);border:1px solid rgba(56,189,248,.45);color:#7DD3FC;font-size:9px;font-weight:700;padding:3px 10px;border-radius:4px;margin-bottom:8px;letter-spacing:.07em}}
+  .meta{{font-size:9.5px;color:rgba(255,255,255,.5);margin-top:3px}}
+
+  /* LAYOUT */
+  .body{{padding:24px 30px}}
+  .sec-title{{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#64748B;border-bottom:1px solid #E2E8F0;padding-bottom:5px;margin:20px 0 12px}}
+
+  /* KPI STRIP */
+  .kpi-row{{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}}
+  .kpi{{border-radius:10px;padding:14px 16px;border:1px solid}}
+  .kpi.b{{background:#EFF6FF;border-color:#BFDBFE}}
+  .kpi.c{{background:#E0F2FE;border-color:#BAE6FD}}
+  .kpi.g{{background:#F0FDF4;border-color:#BBF7D0}}
+  .kpi.r{{background:#FEF2F2;border-color:#FECACA}}
+  .kpi-lbl{{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px}}
+  .kpi.b .kpi-lbl{{color:#1D4ED8}} .kpi.c .kpi-lbl{{color:#0369A1}}
+  .kpi.g .kpi-lbl{{color:#15803D}} .kpi.r .kpi-lbl{{color:#B91C1C}}
+  .kpi-val{{font-size:34px;font-weight:700;line-height:1;margin-bottom:3px}}
+  .kpi.b .kpi-val{{color:#1E40AF}} .kpi.c .kpi-val{{color:#0C4A6E}}
+  .kpi.g .kpi-val{{color:#166534}} .kpi.r .kpi-val{{color:#991B1B}}
+  .kpi-sub{{font-size:9.5px;color:#64748B}}
+
+  /* CHARTS */
+  .chart-row{{display:grid;grid-template-columns:2fr 1fr;gap:14px;margin-bottom:20px}}
+  .chart-box{{background:#F8FAFC;border:1px solid #E2E8F0;border-radius:10px;padding:16px 18px}}
+  .chart-box h3{{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#374151;margin-bottom:12px}}
+
+  /* TABLE */
+  .tbl-wrap{{border:1px solid #E2E8F0;border-radius:10px;overflow:hidden;margin-bottom:20px}}
+  table{{width:100%;border-collapse:collapse;font-size:11px}}
+  thead th{{background:#0E1B2E;color:#fff;padding:9px 10px;font-weight:600;font-size:9.5px;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap}}
+  tbody td{{padding:8px 10px;border-bottom:1px solid #F1F5F9;color:#1E293B}}
+  .tr-odd td{{background:#F8FAFC}}
+  .tr-total td{{background:#0E1B2E!important;color:#fff!important;font-weight:700}}
+  tbody tr:last-child td{{border-bottom:none}}
+
+  /* HIGHLIGHTS */
+  .hl-row{{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px}}
+  .hl{{border-radius:10px;padding:14px 16px;border:1px solid}}
+  .hl.b{{background:#EFF6FF;border-color:#BFDBFE}} .hl.g{{background:#F0FDF4;border-color:#BBF7D0}} .hl.r{{background:#FEF2F2;border-color:#FECACA}}
+  .hl-lbl{{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px}}
+  .hl.b .hl-lbl{{color:#1D4ED8}} .hl.g .hl-lbl{{color:#15803D}} .hl.r .hl-lbl{{color:#B91C1C}}
+  .hl-val{{font-size:12px;font-weight:600;color:#1E293B;line-height:1.4}}
+
+  /* PRINT BUTTON */
+  .print-bar{{background:#F8FAFC;border-top:1px solid #E2E8F0;padding:10px 30px;display:flex;justify-content:flex-end;gap:10px}}
+  .print-btn{{background:#0E1B2E;color:#fff;border:none;padding:8px 18px;border-radius:7px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit}}
+  .print-btn:hover{{background:#1E3A5F}}
+
+  /* FOOTER */
+  .ftr{{background:#0E1B2E;color:rgba(255,255,255,.5);font-size:9px;padding:9px 30px;display:flex;justify-content:space-between}}
+  .ftr strong{{color:rgba(255,255,255,.8)}}
+
+  @media print{{
+    body{{background:#fff}} .page{{box-shadow:none;margin:0;border-radius:0;max-width:none}} .print-bar{{display:none}}
+    body{{-webkit-print-color-adjust:exact;print-color-adjust:exact;color-adjust:exact}}
+  }}
+  @page{{size:A4 landscape;margin:10mm 12mm}}
+</style>
+</head>
+<body>
+<div class="page">
+
+<div class="hdr">
+  <div class="hdr-l">
+    <div class="co">HULIOT PIPES &amp; FITTINGS PVT. LTD.</div>
+    <div class="rt">Executive Dashboard Report &nbsp;·&nbsp; West Zone Field Analytics</div>
+    <div class="per">{escape(selected_month)}</div>
+  </div>
+  <div class="hdr-r">
+    <div class="badge">CONFIDENTIAL</div>
+    <div class="meta">Generated: {gen_time}</div>
+    <div class="meta">West Zone &nbsp;·&nbsp; Field Team Analytics</div>
+  </div>
+</div>
+
+<div class="print-bar">
+  <button class="print-btn" onclick="window.print()">🖨️ Print / Save as PDF</button>
+</div>
+
+<div class="body">
+
+  <div class="sec-title">Key Performance Indicators</div>
+  <div class="kpi-row">
+    <div class="kpi b"><div class="kpi-lbl">Floor Visits</div><div class="kpi-val">{total_floors}</div><div class="kpi-sub">Total floors inspected</div></div>
+    <div class="kpi c"><div class="kpi-lbl">Site Visits</div><div class="kpi-val">{total_sites}</div><div class="kpi-sub">Tower / site entries</div></div>
+    <div class="kpi g"><div class="kpi-lbl">Reports Sent</div><div class="kpi-val">{total_sent}</div><div class="kpi-sub">Delivered to clients</div></div>
+    <div class="kpi r"><div class="kpi-lbl">Pending</div><div class="kpi-val">{total_pending}</div><div class="kpi-sub">Reports outstanding</div></div>
+  </div>
+
+  <div class="sec-title">Performance Charts</div>
+  <div class="chart-row">
+    <div class="chart-box">
+      <h3>Reports Sent &amp; Floor Visits — by Associate</h3>
+      <canvas id="barChart" height="110"></canvas>
+    </div>
+    <div class="chart-box">
+      <h3>Report Status Breakdown</h3>
+      <canvas id="donutChart" height="110"></canvas>
+    </div>
+  </div>
+
+  <div class="sec-title">Detailed Performance Breakdown</div>
+  <div class="tbl-wrap">
+    <table><thead><tr>{thead}</tr></thead><tbody>{tbody}</tbody></table>
+  </div>
+
+  <div class="sec-title">Performance Highlights</div>
+  <div class="hl-row">
+    <div class="hl b"><div class="hl-lbl">🌎 Highest Coverage</div><div class="hl-val">{escape(str(highest_coverage_str))}</div></div>
+    <div class="hl g"><div class="hl-lbl">🚀 Highest Productivity</div><div class="hl-val">{escape(str(highest_prod_str))}</div></div>
+    <div class="hl r"><div class="hl-lbl">⏳ Critical Gaps</div><div class="hl-val">{escape(str(critical_gaps_str))}</div></div>
+  </div>
+
+</div>
+
+<div class="ftr">
+  <span><strong>Huliot Pipes &amp; Fittings Pvt. Ltd.</strong> &nbsp;·&nbsp; West Zone Field Analytics</span>
+  <span>Period: {escape(selected_month)} &nbsp;·&nbsp; Generated: {gen_time} &nbsp;·&nbsp; CONFIDENTIAL</span>
+</div>
+
+</div>
+<script>
+const A={_json.dumps(assoc_data, ensure_ascii=False)};
+// Bar chart
+new Chart(document.getElementById('barChart').getContext('2d'),{{
+  type:'bar',
+  data:{{
+    labels:A.map(d=>d.name),
+    datasets:[
+      {{label:'Reports Sent',data:A.map(d=>d.sent),backgroundColor:'#3B82F6',borderRadius:4,borderSkipped:false}},
+      {{label:'Floor Visits',data:A.map(d=>d.floors),backgroundColor:'#6366F1',borderRadius:4,borderSkipped:false}}
+    ]
+  }},
+  options:{{
+    responsive:true,maintainAspectRatio:false,
+    plugins:{{legend:{{position:'top',labels:{{font:{{size:10}},padding:12,boxWidth:12}}}}}},
+    scales:{{
+      x:{{grid:{{display:false}},ticks:{{font:{{size:10}}}}}},
+      y:{{grid:{{color:'#F1F5F9'}},ticks:{{font:{{size:10}}}}}}
+    }}
+  }}
+}});
+// Donut chart
+new Chart(document.getElementById('donutChart').getContext('2d'),{{
+  type:'doughnut',
+  data:{{
+    labels:['Submitted','Pending','Tech NA'],
+    datasets:[{{
+      data:[{total_sent},{total_pending},Math.max({total_floors}-{total_sent}-{total_pending},0)],
+      backgroundColor:['#22C55E','#EF4444','#94A3B8'],
+      borderWidth:0,hoverOffset:4
+    }}]
+  }},
+  options:{{
+    responsive:true,maintainAspectRatio:false,cutout:'62%',
+    plugins:{{legend:{{position:'bottom',labels:{{font:{{size:10}},padding:10,boxWidth:12}}}}}}
+  }}
+}});
+</script>
+</body>
+</html>"""
+
+    return html.encode("utf-8")
+
+
 def build_scanned_issues_excel(result_df):
     """
     Builds a color-coded Excel for AI-scanned (not-yet-saved) issues.
@@ -2105,22 +2343,36 @@ with tab_exec:
                     st.markdown(f'<div class="highlight-card card-red"><div class="card-title">⏳ Critical Gaps</div><div class="card-value">{critical_gaps_str}</div></div>', unsafe_allow_html=True)
 
                 st.markdown("---")
-                pdf_col1, pdf_col2 = st.columns([1, 3])
-                with pdf_col1:
+                dl_c1, dl_c2, dl_c3 = st.columns([1, 1, 2])
+                with dl_c1:
+                    html_rpt_bytes = build_executive_html_report(
+                        display_df, total_floors, total_sites, total_sent, total_pending,
+                        selected_month, highest_coverage_str, highest_prod_str, critical_gaps_str,
+                        summary_df
+                    )
+                    st.download_button(
+                        "📊 Download Report (HTML)",
+                        data=html_rpt_bytes,
+                        file_name=f"Executive_Report_{selected_month.replace(' ','_')}_{datetime.now().strftime('%d%m%Y')}.html",
+                        mime="text/html",
+                        key="dl_exec_html"
+                    )
+                with dl_c2:
                     pdf_bytes = build_executive_pdf(
                         display_df, total_floors, total_sites, total_sent, total_pending,
                         selected_month, highest_coverage_str, highest_prod_str, critical_gaps_str,
                         summary_df
                     )
                     st.download_button(
-                        "📄 Download PDF Report",
+                        "📄 Download PDF",
                         data=pdf_bytes,
-                        file_name=f"Executive_Dashboard_{selected_month.replace(' ', '_')}_{datetime.now().strftime('%d%m%Y')}.pdf",
+                        file_name=f"Executive_Dashboard_{selected_month.replace(' ','_')}_{datetime.now().strftime('%d%m%Y')}.pdf",
                         mime="application/pdf",
                         key="dl_exec_pdf"
                     )
-                with pdf_col2:
-                    st.caption("Print-ready PDF — KPIs, chart, full breakdown table, highlights. Ready for monthly review meeting.")
+                with dl_c3:
+                    st.caption("**HTML Report** = open in browser → click 🖨️ Print → Save as PDF. Best quality, professional charts, Huliot branded.\n\n**PDF** = direct download, basic charts.")
+
 
 # ==========================================
 # TAB 4: SITE REPORT CARD
