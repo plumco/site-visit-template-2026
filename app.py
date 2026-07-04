@@ -2145,46 +2145,51 @@ with tab_issues:
                         fig_ac.update_layout(yaxis=dict(autorange="reversed"), margin=dict(l=0, r=60, t=30, b=0))
                         st.plotly_chart(fig_ac, use_container_width=True, key="chart_issue_assignee")
 
-
 # ==========================================
-# TAB 6: SITE MAP (ACTUAL GOOGLE MAPS VIEW)
+# TAB 6: SITE MAP (GOOGLE MAPS VIEW)
 # ==========================================
 with tab_map:
     st.markdown("### 🗺️ Site Map (Google Maps View)")
-    st.markdown("Filter sites by status using the sidebar or list below.")
-
+    
     if master_df.empty:
         st.warning("No MasterProject data found.")
     else:
         # Define Google Maps tiles
         google_tiles = "https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}"
         
-        # Center map on India
+        # Initialize map
         m = folium.Map(location=[20.5937, 78.9629], zoom_start=5, 
                        tiles=google_tiles, attr="Google", control_scale=True)
         
+        # Plugin features
         Fullscreen().add_to(m)
-        marker_cluster = MarkerCluster().add_to(m)
+        
+        # Use MarkerCluster with spiderfy disabled to prevent "spider web" spiral
+        marker_cluster = MarkerCluster(
+            name="Sites", 
+            options={'spiderfyOnMaxZoom': False, 'zoomToBoundsOnClick': True}
+        ).add_to(m)
 
         # Plot sites
         for _, row in master_df.iterrows():
             lat = row.get("Latitude")
             lon = row.get("Longitude")
             
+            # Check if Lat/Lon exist
             if pd.notna(lat) and pd.notna(lon):
                 # Google Maps Directions URL
-                addr = urllib.parse.quote(f"{row['PROJECT']}, {row.get('DISTRICT / CITY', '')}")
+                addr = urllib.parse.quote(f"{row.get('PROJECT', '')}, {row.get('DISTRICT / CITY', '')}")
                 url = f"https://www.google.com/maps/dir/?api=1&destination={addr}"
                 
-                # Marker with status-based color
+                # Status based marker color
                 status = str(row.get("STATUS OF PROJECT", "")).lower()
-                color = "purple" if "ongoing" in status else "green"
+                color = "purple" if "ongoing" in status else ("orange" if "complited" in status else "blue")
                 
                 folium.Marker(
                     location=[lat, lon],
-                    popup=f"<b>{row['PROJECT']}</b><br>Status: {row['STATUS OF PROJECT']}<br><a href='{url}' target='_blank'>📍 Get Directions</a>",
+                    popup=f"<b>{row.get('PROJECT')}</b><br>Status: {row.get('STATUS OF PROJECT')}<br><a href='{url}' target='_blank'>📍 Get Directions</a>",
                     icon=folium.Icon(color=color, icon="location-arrow", prefix="fa")
                 ).add_to(marker_cluster)
 
-        # Render Google Map
-        st_folium(m, width=1400, height=600)
+        # Display map
+        st_folium(m, width=1200, height=550)
