@@ -2236,35 +2236,59 @@ with tab_issues:
 
 
 # ==========================================
-# TAB 6: FIXED SITE MAP (DEBUG MODE ENABLED)
+# ==========================================
+# TAB 6: SITE MAP (FIXED GEOGRAPHIC MAPPING)
 # ==========================================
 with tab_map:
     st.markdown("### 🗺️ Site Map")
 
+    # Legend CSS
+    st.markdown("""
+    <style>
+        .map-container { position: relative; }
+        .map-legend {
+            background: rgba(15, 23, 42, 0.9);
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid #334155;
+            color: #E2E8F0;
+            font-size: 11px;
+            position: absolute;
+            right: 20px;
+            top: 20px;
+            z-index: 1000;
+        }
+        .legend-item { display: flex; align-items: center; margin-bottom: 4px; }
+        .dot { height: 10px; width: 10px; border-radius: 50%; margin-right: 8px; }
+    </style>
+    """, unsafe_allow_html=True)
+
     if master_df.empty:
         st.warning("No MasterProject data found.")
     else:
-        # 1. Status Colors
+        # 1. Config
         status_color_map = {
             "ONGOING": "#8b5cf6", "COMPLETED": "#10b981", "HOLDED": "#06b6d4",
             "UPCOMING": "#f43f5e", "MOCK UP": "#a3e635", "PROSPECTIVE": "#e879f9",
             "LOSS": "#fbbf24"
         }
-
-        # 2. Get Site Name Column
+        
+        # --- UPDATE THIS TO MATCH YOUR SHEET HEADER EXACTLY ---
+        CITY_COL = "DISTRICT / CITY" 
         map_site_col = find_master_site_col(master_df)
         
-        # 3. Process Data for Map
+        # 2. Process Data
         plot_data = []
         failed_sites = []
         
         for _, row in master_df.iterrows():
-            proj_name = row.get(map_site_col)
+            proj_name = str(row.get(map_site_col, "")).strip()
+            city_name = str(row.get(CITY_COL, "")).strip()
+            
             if not proj_name: continue
             
-            # Use your existing geocode_site function
-            # If this returns None, the site won't show
-            lat, lon, level = geocode_site(proj_name, "", "", "")
+            # Geocode using Site Name + City for higher accuracy
+            lat, lon, _ = geocode_site(f"{proj_name}, {city_name}", "", "", "")
             
             if lat and lon:
                 plot_data.append({
@@ -2274,18 +2298,18 @@ with tab_map:
                     "Status": str(row.get("Status", "Unknown")).upper()
                 })
             else:
-                failed_sites.append(proj_name)
+                failed_sites.append(f"{proj_name} (City: {city_name})")
 
-        # 4. Display Stats
-        col1, col2 = st.columns(2)
-        col1.metric("Sites Plotted", len(plot_data))
-        col2.metric("Sites Missing Location", len(failed_sites))
+        # 3. Metrics
+        m1, m2 = st.columns(2)
+        m1.metric("Sites Plotted", len(plot_data))
+        m2.metric("Failed to Plot", len(failed_sites))
 
         if failed_sites:
-            with st.expander("Show sites that failed to locate"):
+            with st.expander("Sites that failed to locate (Check these names in your sheet)"):
                 st.write(list(set(failed_sites)))
 
-        # 5. Render Map
+        # 4. Map Rendering
         if plot_data:
             m = folium.Map(location=[20.5937, 78.9629], zoom_start=5, tiles="cartodbpositron")
             for item in plot_data:
@@ -2296,6 +2320,16 @@ with tab_map:
                     popup=f"{item['Project']} ({item['Status']})",
                     color=color, fill=True, fill_opacity=0.8
                 ).add_to(m)
+            
+            st.markdown('<div class="map-container">', unsafe_allow_html=True)
             st_folium(m, width=1200, height=600)
+            
+            # Legend UI
+            legend_html = "<div class='map-legend'><strong>Status</strong><br>"
+            for status, color in status_color_map.items():
+                legend_html += f"<div class='legend-item'><div class='dot' style='background:{color}'></div>{status.capitalize()}</div>"
+            legend_html += "</div>"
+            st.markdown(legend_html, unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
         else:
-            st.error("No sites could be plotted. Check if your project names contain valid city/area information.")
+            st.error("No sites plotted. Please verify your column names match the sheet headers.")
