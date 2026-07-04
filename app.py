@@ -332,15 +332,6 @@ if not st.session_state["authenticated"]:
 
     st.stop()
 
-st.sidebar.markdown(f"👤 **{st.session_state.get('user_email', '')}**")
-if st.sidebar.button("🚪 Logout"):
-    st.session_state["authenticated"] = False
-    st.session_state["user_email"] = None
-    st.cache_data.clear()
-    st.cache_resource.clear()
-    st.rerun()
-
-st.sidebar.markdown("---")
 
 @st.cache_resource
 def init_connection():
@@ -1261,10 +1252,21 @@ visits_df, master_df = load_data()
 
 with st.sidebar:
     st.title("📊 Project Overview")
+    
+    # NEW: Global Sidebar Filter added here
     if not master_df.empty and "STATUS OF PROJECT" in master_df.columns:
+        status_opts = ["All"] + clean_options(master_df["STATUS OF PROJECT"])
+        global_status_filter = st.selectbox("🎯 Filter Entire App by Status", status_opts)
+        
+        # Apply filter globally if selected
+        if global_status_filter != "All":
+            master_df = master_df[master_df["STATUS OF PROJECT"].astype(str) == global_status_filter]
+
+        st.markdown("### Current Counts")
         status_counts = master_df["STATUS OF PROJECT"].value_counts()
         for status, count in status_counts.items():
             st.metric(label=status, value=count)
+            
     if st.button("🔄 Refresh Data"):
         st.cache_data.clear()
         st.rerun()
@@ -2241,7 +2243,7 @@ with tab_issues:
 
 
 # ==========================================
-# TAB 6: SITE MAP (FOLIUM + LEGEND)
+# TAB 6: SITE MAP (NOW USING FOLIUM FOR GOOGLE MAPS)
 # ==========================================
 with tab_map:
     st.markdown("### 🗺️ Site Map (Google Maps View)")
@@ -2374,35 +2376,6 @@ with tab_map:
                     else:
                         zoom_start = 5
 
-                    # 1. Define color map based on project status
-                    status_color_map = {
-                        "ongoing": "purple", 
-                        "completed": "orange", "complete": "orange", "done": "orange",
-                        "hold": "blue", "pending": "blue", "on hold": "blue",
-                        "upcoming": "pink", 
-                        "mock up": "green", 
-                        "prospective": "purple", 
-                        "loss": "lightred",
-                        "unknown": "gray"
-                    }
-
-                    # 2. Custom HTML Legend Overlay
-                    legend_html = '''
-                    <div style="position: fixed; bottom: 50px; right: 50px; width: 140px; 
-                        background-color: rgba(19, 36, 61, 0.85); color: #CBD5E1; 
-                        z-index:9999; font-size:13px; padding: 12px; border-radius: 8px; 
-                        border: 1px solid rgba(56,189,248,0.3); font-family: 'Inter', sans-serif;">
-                        <b style="color: #F1F5F9; font-size: 14px; margin-bottom: 8px; display: block;">Status Legend</b>
-                        <div style="margin-bottom: 4px;"><i class="fa fa-map-marker" style="color:purple; font-size:16px; margin-right:8px;"></i> ONGOING</div>
-                        <div style="margin-bottom: 4px;"><i class="fa fa-map-marker" style="color:orange; font-size:16px; margin-right:8px;"></i> Completed</div>
-                        <div style="margin-bottom: 4px;"><i class="fa fa-map-marker" style="color:blue; font-size:16px; margin-right:8px;"></i> Hold</div>
-                        <div style="margin-bottom: 4px;"><i class="fa fa-map-marker" style="color:pink; font-size:16px; margin-right:8px;"></i> Upcoming</div>
-                        <div style="margin-bottom: 4px;"><i class="fa fa-map-marker" style="color:green; font-size:16px; margin-right:8px;"></i> Mock Up</div>
-                        <div style="margin-bottom: 4px;"><i class="fa fa-map-marker" style="color:purple; font-size:16px; margin-right:8px;"></i> Prospective</div>
-                        <div><i class="fa fa-map-marker" style="color:lightred; font-size:16px; margin-right:8px;"></i> Loss</div>
-                    </div>
-                    '''
-
                     # Create Folium Map with Google Maps Tiles
                     m = folium.Map(
                         location=[center_lat, center_lon],
@@ -2412,8 +2385,7 @@ with tab_map:
                         control_scale=True # Adds scale bar at the bottom left
                     )
 
-                    # Inject Legend and Fullscreen Plugin
-                    m.get_root().html.add_child(folium.Element(legend_html))
+                    # Add Fullscreen Plugin
                     Fullscreen(
                         position='topright',
                         title='Expand Map',
@@ -2421,17 +2393,19 @@ with tab_map:
                         force_separate_button=True
                     ).add_to(m)
 
+                    status_color_map = {
+                        "Completed": "green", "Complete": "green", "Done": "green",
+                        "Ongoing": "blue", "In Progress": "blue", "Active": "blue",
+                        "Pending": "orange", "On Hold": "orange", "Hold": "orange",
+                        "Cancelled": "red", "Canceled": "red", "Stopped": "red",
+                    }
+
                     # Add Marker Clustering Plugin to prevent spider web overlaps
-                    # spiderfyOnMaxZoom=False removes the spiral effect
-                    marker_cluster = MarkerCluster(
-                        name="Sites",
-                        options={'spiderfyOnMaxZoom': False, 'zoomToBoundsOnClick': True}
-                    ).add_to(m)
+                    marker_cluster = MarkerCluster(name="Sites").add_to(m)
 
                     # Add Arrow Markers to the Cluster with dynamic Google Maps Search URL
                     for _, row in map_df.iterrows():
-                        status_clean = str(row['Status']).lower()
-                        marker_color = status_color_map.get(status_clean, "gray")
+                        marker_color = status_color_map.get(row['Status'], "gray")
                         
                         # Tell Google Maps to search for the specific project address instead of raw coordinates
                         address_query = urllib.parse.quote(f"{row['Project']}, {row['Area']}, {row['District/City']}")
@@ -2464,7 +2438,8 @@ with tab_map:
                         st_folium(m, width=1200, height=550, returned_objects=[])
 
                     st.caption(
-                        "Use the **Fullscreen button [ ]** in the top right. Scroll zoom is fully supported. Nearby markers are **clustered into groups** (click the numbers to zoom in). Click any marker to open GPS Directions."
+                        "🟦 Ongoing &nbsp;&nbsp; 🟩 Completed &nbsp;&nbsp; 🟧 Pending/Hold &nbsp;&nbsp; 🟥 Cancelled &nbsp;&nbsp; "
+                        "⬜ Unknown status. <br>Use the **Fullscreen button [ ]** in the top right. Scroll zoom is fully supported. Nearby markers are **clustered into groups** (click the numbers to reveal them). Click any marker to open GPS Directions."
                     )
 
                     st.markdown("---")
