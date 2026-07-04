@@ -2151,7 +2151,7 @@ with tab_issues:
 # ==========================================
 with tab_map:
     st.markdown("### 🗺️ Site Map (Google Maps View)")
-    st.markdown("Geographic view of every project in **MasterProject** — Filter easily by State \u2794 City \u2794 Area.")
+    st.markdown("Geographic view of every project in **MasterProject** — Filter easily by State ➔ City ➔ Area. **Click legend items to isolate statuses.**")
 
     if master_df.empty:
         st.warning("No MasterProject data found.")
@@ -2162,190 +2162,66 @@ with tab_map:
         map_area_col   = safe_col(master_df, ["Area", "AREA"])
         map_status_col = safe_col(master_df, ["STATUS OF PROJECT", "Status", "STATUS"])
         map_tech_col   = safe_col(master_df, ["Technical Person", "TECHNICAL PERSON NAME", "TECHNICAL PERSON"])
-        map_sales_col  = safe_col(master_df, ["Sells Person", "SALES PERSON NAME", "SALES PERSON", "Sales Person"])
-        map_ong_col    = safe_col(master_df, ["VISIT ONGOING", "Visit Ongoing"])
-
         map_lat_col    = safe_col(master_df, ["Latitude", "Lat", "LATITUDE"])
         map_lon_col    = safe_col(master_df, ["Longitude", "Lon", "Long", "LONGITUDE"])
 
-        if not map_site_col:
-            st.warning("Could not find a Project / Site Name column in MasterProject sheet.")
+        # Filters
+        mf1, mf2, mf3 = st.columns(3)
+        with mf1:
+            f_state = st.selectbox("State", ["All"] + clean_options(master_df[map_state_col]))
+        with mf2:
+            f_dist = st.selectbox("City / District", ["All"] + clean_options(master_df[map_dist_col]))
+        with mf3:
+            f_status = st.selectbox("Project Status", ["All"] + clean_options(master_df[map_status_col]))
+
+        filtered_map_df = master_df.copy()
+        if f_state != "All": filtered_map_df = filtered_map_df[filtered_map_df[map_state_col] == f_state]
+        if f_dist != "All": filtered_map_df = filtered_map_df[filtered_map_df[map_dist_col] == f_dist]
+        if f_status != "All": filtered_map_df = filtered_map_df[filtered_map_df[map_status_col] == f_status]
+
+        # Prepare Map Data
+        map_rows = []
+        for _, row in filtered_map_df.iterrows():
+            lat = row.get("Latitude")
+            lon = row.get("Longitude")
+            # Fallback if lat/lon missing
+            if pd.isna(lat) or pd.isna(lon):
+                lat, lon, _ = geocode_site(row.get(map_site_col), row.get(map_area_col), row.get(map_dist_col), row.get(map_state_col))
+            
+            if lat:
+                map_rows.append({**row, "lat": lat, "lon": lon})
+
+        if not map_rows:
+            st.info("No sites to plot.")
         else:
-            # Cascading Hierarchical Filters
-            mf1, mf2, mf3, mf4 = st.columns(4)
-            
-            with mf1:
-                map_states = ["All"] + (clean_options(master_df[map_state_col]) if map_state_col else [])
-                f_map_state = st.selectbox("State", map_states, key="map_f_state")
-                
-            df_for_city = master_df if f_map_state == "All" else master_df[master_df[map_state_col].astype(str) == f_map_state]
-            
-            with mf2:
-                map_cities = ["All"] + (clean_options(df_for_city[map_dist_col]) if map_dist_col else [])
-                f_map_city = st.selectbox("City / District", map_cities, key="map_f_city")
-                
-            df_for_area = df_for_city if f_map_city == "All" else df_for_city[df_for_city[map_dist_col].astype(str) == f_map_city]
-            
-            with mf3:
-                map_areas = ["All"] + (clean_options(df_for_area[map_area_col]) if map_area_col else [])
-                f_map_area = st.selectbox("Area", map_areas, key="map_f_area")
-                
-            filtered_map_df = df_for_area if f_map_area == "All" else df_for_area[df_for_area[map_area_col].astype(str) == f_map_area]
-            
-            with mf4:
-                map_statuses = ["All"] + (clean_options(filtered_map_df[map_status_col]) if map_status_col else [])
-                f_map_status = st.selectbox("Project Status", map_statuses, key="map_f_status")
-                
-            if f_map_status != "All":
-                filtered_map_df = filtered_map_df[filtered_map_df[map_status_col].astype(str) == f_map_status]
+            map_df = pd.DataFrame(map_rows)
+            color_map = {
+                "ONGOING": "#a855f7", "ongoing": "#a855f7",
+                "complited": "#f97316", "completed": "#f97316",
+                "Holded": "#3b82f6", "hold": "#3b82f6",
+                "Upcoming": "#ec4899", "upcoming": "#ec4899",
+                "Mock Up": "#22c55e", "mock up": "#22c55e",
+                "Prospective": "#d946ef", "prospective": "#d946ef",
+                "Loss": "#eab308", "loss": "#eab308"
+            }
 
-            with st.spinner("Plotting site locations on map..."):
-                map_rows = []
-                unmatched = []
-                for _, row in filtered_map_df.iterrows():
-                    proj_name = str(row.get(map_site_col, "")).strip()
-                    if not proj_name:
-                        continue
-                    state_val  = str(row.get(map_state_col, "")).strip() if map_state_col else ""
-                    dist_val   = str(row.get(map_dist_col, "")).strip() if map_dist_col else ""
-                    area_val   = str(row.get(map_area_col, "")).strip() if map_area_col else ""
-                    status_val = str(row.get(map_status_col, "")).strip() if map_status_col else "Unknown"
-                    tech_val   = str(row.get(map_tech_col, "")).strip() if map_tech_col else ""
-                    sales_val  = str(row.get(map_sales_col, "")).strip() if map_sales_col else ""
-                    ong_val    = str(row.get(map_ong_col, "")).strip() if map_ong_col else ""
+            fig_map = px.scatter_mapbox(
+                map_df, lat="lat", lon="lon", color="STATUS OF PROJECT",
+                color_discrete_map=color_map, hover_name="PROJECT",
+                zoom=5, height=600
+            )
+            fig_map.update_layout(mapbox_style="carto-darkmatter", margin={"r":0,"t":0,"l":0,"b":0})
+            st.plotly_chart(fig_map, use_container_width=True, config={"scrollZoom": True})
 
-                    lat = lon = None
-                    level = "Unknown"
-                    
-                    if map_lat_col and map_lon_col:
-                        try:
-                            lat = float(str(row.get(map_lat_col, "")).strip())
-                            lon = float(str(row.get(map_lon_col, "")).strip())
-                            level = "Exact from Sheet"
-                        except ValueError:
-                            pass
-                            
-                    if lat is None or lon is None:
-                        lat, lon, level = geocode_site(proj_name, area_val, dist_val, state_val)
+            # Directions Table
+            st.subheader("📍 Site Directions")
+            def get_url(row):
+                addr = urllib.parse.quote(f"{row['PROJECT']}, {row.get('DISTRICT / CITY', '')}")
+                return f"https://www.google.com/maps/dir/?api=1&destination={addr}"
 
-                    if lat is None:
-                        unmatched.append(proj_name)
-                        continue
-
-                    map_rows.append({
-                        "Project": proj_name,
-                        "State": state_val or "-",
-                        "District/City": dist_val or "-",
-                        "Area": area_val or "-",
-                        "Status": status_val or "Unknown",
-                        "Technical Person": tech_val or "-",
-                        "Sales Person": sales_val or "-",
-                        "Ongoing": ong_val or "-",
-                        "lat": lat,
-                        "lon": lon,
-                        "Match Level": level,
-                    })
-
-                map_df = pd.DataFrame(map_rows)
-
-                mk1, mk2, mk3, mk4 = st.columns(4)
-                mk1.metric("Sites Plotted", len(map_df))
-                mk2.metric("States Covered", map_df["State"].nunique() if not map_df.empty else 0)
-                mk3.metric("Cities/Districts", map_df["District/City"].nunique() if not map_df.empty else 0)
-                mk4.metric("Unmatched (not plotted)", len(unmatched))
-
-                if unmatched:
-                    with st.expander(f"â \u26a0ï {len(unmatched)} project(s) could not be plotted \u2014 location completely unknown"):
-                        st.write(", ".join(unmatched[:50]) + (" ..." if len(unmatched) > 50 else ""))
-
-                st.markdown("---")
-
-                if map_df.empty:
-                    st.info("No sites could be plotted with current filters/data.")
-                else:
-                    # Precise color mapping configuration matching targeted requirements
-                    color_map = {
-                        "ONGOING": "#a855f7", "ongoing": "#a855f7",
-                        "complited": "#f97316", "completed": "#f97316", "complete": "#f97316", "done": "#f97316",
-                        "Holded": "#3b82f6", "hold": "#3b82f6", "pending": "#3b82f6", "on hold": "#3b82f6",
-                        "Upcoming": "#ec4899", "upcoming": "#ec4899",
-                        "Mock Up": "#22c55e", "mock up": "#22c55e",
-                        "Prospective": "#d946ef", "prospective": "#d946ef",
-                        "Loss": "#eab308", "loss": "#eab308",
-                        "Unknown": "#94a3b8", "unknown": "#94a3b8"
-                    }
-
-                    center_lat = map_df["lat"].mean()
-                    center_lon = map_df["lon"].mean()
-                    
-                    if f_map_area != "All":
-                        zoom_start = 12
-                    elif f_map_city != "All":
-                        zoom_start = 9
-                    elif f_map_state != "All":
-                        zoom_start = 6
-                    else:
-                        zoom_start = 4.5
-
-                    fig_map = px.scatter_mapbox(
-                        map_df,
-                        lat="lat", 
-                        lon="lon",
-                        color="Status",
-                        color_discrete_map=color_map,
-                        hover_name="Project",
-                        hover_data={
-                            "State": True, 
-                            "District/City": True, 
-                            "Area": True,
-                            "Technical Person": True,
-                            "Status": True,
-                            "lat": False, 
-                            "lon": False
-                        },
-                        zoom=zoom_start,
-                        center={"lat": center_lat, "lon": center_lon},
-                        height=650,
-                    )
-                    
-                    fig_map.update_traces(marker=dict(size=14, opacity=0.9))
-                    fig_map.update_layout(
-                        mapbox_style="carto-darkmatter",
-                        margin=dict(l=0, r=0, t=0, b=0),
-                        legend=dict(
-                            title="Status (Click to toggle)",
-                            yanchor="top",
-                            y=0.98,
-                            xanchor="right",
-                            x=0.98,
-                            bgcolor="rgba(15,23,42,0.85)",
-                            bordercolor="rgba(56,189,248,0.3)",
-                            borderwidth=1,
-                            font=dict(color="#CBD5E1")
-                        ),
-                        paper_bgcolor="#13243D",
-                        plot_bgcolor="#13243D"
-                    )
-
-                    with st.container(border=True):
-                        st.plotly_chart(fig_map, use_container_width=True, key="site_map_chart_plotly_final", config={"scrollZoom": True})
-
-                    st.caption("â¨ **Pro Tip:** Click any status in the legend box (top right) to hide or isolate those specific projects.")
-
-                    st.markdown("---")
-                    st.subheader("ð Plotted Sites & GPS Directions")
-                    
-                    map_df["Get Directions"] = map_df.apply(
-                        lambda r: f"https://www.google.com/maps/dir/?api=1&destination={urllib.parse.quote(f'{r[\"Project\"]}, {r[\"Area\"]}, {r[\"District/City\"]}')}", axis=1
-                    )
-                    
-                    table_cols_map = ["Project", "State", "District/City", "Area", "Status", "Technical Person", "Get Directions"]
-                    
-                    st.dataframe(
-                        map_df[table_cols_map], 
-                        use_container_width=True, 
-                        hide_index=True,
-                        column_config={
-                            "Get Directions": st.column_config.LinkColumn("ð Directions", display_text="Open Google Maps")
-                        }
-                    )
+            map_df["Directions"] = map_df.apply(get_url, axis=1)
+            st.dataframe(
+                map_df[["PROJECT", "DISTRICT / CITY", "STATUS OF PROJECT", "Directions"]],
+                column_config={"Directions": st.column_config.LinkColumn("Get Directions", display_text="Open in Maps 📍")},
+                use_container_width=True, hide_index=True
+            )
