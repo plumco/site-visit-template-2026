@@ -11,3 +11,4 @@ reportlab
 folium
 streamlit-folium
 geopy
+reportlab
