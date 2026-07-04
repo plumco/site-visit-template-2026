@@ -24,7 +24,6 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.graphics.shapes import Drawing
 from reportlab.graphics.charts.barcharts import VerticalBarChart
 from geopy.geocoders import Nominatim
-from geopy.extra.rate_limiter import RateLimiter
 
 # --- Liquid Glass chart template ---
 _glass_template = pio.templates["plotly_dark"]
@@ -1107,37 +1106,115 @@ Rules:
 
 
 # ==========================================
-# SITE MAP — DYNAMIC GEOCODING WITH GEOPY
+# SITE MAP — INSTANT DICTIONARY HYBRID GEOCODING
 # ==========================================
 
+# A fast dictionary of common Maharashtra/West Zone cities and areas
+CITY_COORDS = {
+    "mumbai": (19.0760, 72.8777), "pune": (18.5204, 73.8567),
+    "baner": (18.5590, 73.7868), "hinjewadi": (18.5913, 73.7389), "wakad": (18.5987, 73.7688),
+    "kharadi": (18.5515, 73.9348), "viman nagar": (18.5679, 73.9143), "hadapsar": (18.5089, 73.9259),
+    "kothrud": (18.5074, 73.8077), "pimpri": (18.6298, 73.7997), "chinchwad": (18.6270, 73.7828),
+    "nagpur": (21.1458, 79.0882), "nashik": (19.9975, 73.7898),
+    "thane": (19.2183, 72.9781), "aurangabad": (19.8762, 75.3433),
+    "chhatrapati sambhajinagar": (19.8762, 75.3433),
+    "solapur": (17.6599, 75.9064), "kolhapur": (16.7050, 74.2433),
+    "amravati": (20.9320, 77.7523), "navi mumbai": (19.0330, 73.0297),
+    "vasai": (19.4912, 72.8054), "virar": (19.4559, 72.8112),
+    "kalyan": (19.2403, 73.1305), "dombivli": (19.2183, 73.0864),
+    "panvel": (18.9894, 73.1175), "ahmednagar": (19.0948, 74.7480),
+    "jalgaon": (21.0077, 75.5626), "akola": (20.7002, 77.0082),
+    "latur": (18.4088, 76.5604), "dhule": (20.9042, 74.7749),
+    "ratnagiri": (16.9902, 73.3120), "satara": (17.6805, 74.0183),
+    "sangli": (16.8524, 74.5815), "wardha": (20.7453, 78.6022),
+    "chandrapur": (19.9615, 79.2961), "ichalkaranji": (16.6920, 74.4605),
+    "panchavati": (19.9975, 73.7898),
+    "ahmedabad": (23.0225, 72.5714), "surat": (21.1702, 72.8311),
+    "vadodara": (22.3072, 73.1812), "baroda": (22.3072, 73.1812),
+    "rajkot": (22.3039, 70.8022), "bhavnagar": (21.7645, 72.1519),
+    "jamnagar": (22.4707, 70.0577), "junagadh": (21.5222, 70.4579),
+    "gandhinagar": (23.2156, 72.6369), "anand": (22.5645, 72.9289),
+    "navsari": (20.9467, 72.9520), "morbi": (22.8173, 70.8378),
+    "nadiad": (22.6939, 72.8615), "surendranagar": (22.7196, 71.6369),
+    "bharuch": (21.7051, 72.9959), "mehsana": (23.5880, 72.3693),
+    "vapi": (20.3893, 72.9106), "valsad": (20.5992, 72.9342),
+    "porbandar": (21.6417, 69.6293),
+    "indore": (22.7196, 75.8577), "bhopal": (23.2599, 77.4126),
+    "jabalpur": (23.1815, 79.9864), "gwalior": (26.2183, 78.1828),
+    "ujjain": (23.1765, 75.7885), "sagar": (23.8388, 78.7378),
+    "dewas": (22.9676, 76.0534), "satna": (24.5854, 80.8322),
+    "ratlam": (23.3315, 75.0367), "rewa": (24.5362, 81.2961),
+    "katni": (23.8339, 80.3933), "singrauli": (24.1992, 82.6753),
+    "burhanpur": (21.3009, 76.2291), "khandwa": (21.8245, 76.3529),
+    "bhind": (26.5644, 78.7873), "chhindwara": (22.0574, 78.9382),
+    "guna": (24.6466, 77.3119), "shivpuri": (25.4231, 77.6588),
+    "vidisha": (23.5251, 77.8081), "damoh": (23.8316, 79.4422),
+    "raipur": (21.2514, 81.6296), "bhilai": (21.2090, 81.4285),
+    "bilaspur": (22.0797, 82.1391), "korba": (22.3595, 82.7501),
+    "durg": (21.1904, 81.2849), "rajnandgaon": (21.0974, 81.0388),
+    "jagdalpur": (19.0822, 82.0322), "raigarh": (21.8974, 83.3950),
+    "ambikapur": (23.1193, 83.1957), "mahasamund": (21.1100, 82.0986),
+    "delhi": (28.7041, 77.1025), "new delhi": (28.6139, 77.2090),
+    "bengaluru": (12.9716, 77.5946), "bangalore": (12.9716, 77.5946),
+    "hyderabad": (17.3850, 78.4867), "chennai": (13.0827, 80.2707),
+    "kolkata": (22.5726, 88.3639), "jaipur": (26.9124, 75.7873),
+    "lucknow": (26.8467, 80.9462), "chandigarh": (30.7333, 76.7794),
+    "patna": (25.5941, 85.1376), "ranchi": (23.3441, 85.3096),
+    "bhubaneswar": (20.2961, 85.8245), "guwahati": (26.1445, 91.7362),
+    "thiruvananthapuram": (8.5241, 76.9366), "panaji": (15.4909, 73.8278),
+    "dehradun": (30.3165, 78.0322), "shimla": (31.1048, 77.1734),
+    "amaravati": (16.5062, 80.6480),
+}
+
+STATE_COORDS = {
+    "maharashtra": (19.7515, 75.7139), "gujarat": (22.2587, 71.1924),
+    "madhya pradesh": (22.9734, 78.6569), "chhattisgarh": (21.2787, 81.8661),
+    "rajasthan": (27.0238, 74.2179), "karnataka": (15.3173, 75.7139),
+    "tamil nadu": (11.1271, 78.6569), "telangana": (18.1124, 79.0193),
+    "andhra pradesh": (15.9129, 79.7400), "uttar pradesh": (26.8467, 80.9462),
+    "delhi": (28.7041, 77.1025), "punjab": (31.1471, 75.3412),
+    "haryana": (29.0588, 76.0856), "west bengal": (22.9868, 87.8550),
+    "bihar": (25.0961, 85.3131), "kerala": (10.8505, 76.2711),
+    "odisha": (20.9517, 85.0985), "jharkhand": (23.6102, 85.2799),
+    "assam": (26.2006, 92.9376), "goa": (15.2993, 74.1240),
+    "uttarakhand": (30.0668, 79.0193), "himachal pradesh": (31.1048, 77.1734),
+}
+
 @st.cache_data(show_spinner=False)
-def geocode_site_exact(project, area, city, state):
+def geocode_site(project, area, city, state):
     """
-    Uses geopy (OpenStreetMap) to get coordinates based on the site's address.
-    Checks in sequence: Project+Area -> Area+City -> City to find the point.
+    Uses the instant dictionary first to prevent API timeouts.
+    If the city isn't known, it makes ONE careful attempt with the API.
     """
-    geolocator = Nominatim(user_agent="huliot_site_analytics_app")
-    
-    # Create search queries from most specific to least specific
+    a = str(area).strip().lower()
+    c = str(city).strip().lower()
+    s = str(state).strip().lower()
+
+    # 1. Fast Dictionary Lookup (Instant, prevents freezing)
+    if a and a in CITY_COORDS:
+        return CITY_COORDS[a][0], CITY_COORDS[a][1], "Area (Instant)"
+    if c and c in CITY_COORDS:
+        return CITY_COORDS[c][0], CITY_COORDS[c][1], "City (Instant)"
+    if c:
+        for key, (lat, lon) in CITY_COORDS.items():
+            if key in c or c in key:
+                return lat, lon, "City (Instant)"
+    if s and s in STATE_COORDS:
+        return STATE_COORDS[s][0], STATE_COORDS[s][1], "State (Instant)"
+
+    # 2. API Lookup (Slow - Only if completely missing from dict)
+    geolocator = Nominatim(user_agent="huliot_site_analytics_app_v2")
     queries = []
-    
-    if project and area and city:
-        queries.append(f"{project}, {area}, {city}, India")
-    if area and city and state:
-        queries.append(f"{area}, {city}, {state}, India")
-    if city and state:
-        queries.append(f"{city}, {state}, India")
+    if project and area and city: queries.append(f"{project}, {area}, {city}, India")
+    if area and city: queries.append(f"{area}, {city}, {state}, India")
+    if city and state: queries.append(f"{city}, {state}, India")
         
     for query in queries:
         try:
-            location = geolocator.geocode(query, timeout=3)
+            # Short timeout to ensure app doesn't hang forever
+            location = geolocator.geocode(query, timeout=2)
             if location:
-                # Determine match level based on what succeeded
-                if query.startswith(f"{project}"): level = "Exact Project"
-                elif query.startswith(f"{area}"): level = "Area"
-                else: level = "City"
-                
-                return location.latitude, location.longitude, level
+                return location.latitude, location.longitude, "API Found"
         except:
             continue
             
@@ -2177,6 +2254,10 @@ with tab_map:
         map_sales_col  = safe_col(master_df, ["Sells Person", "SALES PERSON NAME", "SALES PERSON", "Sales Person"])
         map_ong_col    = safe_col(master_df, ["VISIT ONGOING", "Visit Ongoing"])
 
+        # Checking if user already added explicit Latitude / Longitude columns to their sheet
+        map_lat_col    = safe_col(master_df, ["Latitude", "Lat", "LATITUDE"])
+        map_lon_col    = safe_col(master_df, ["Longitude", "Lon", "Long", "LONGITUDE"])
+
         if not map_site_col:
             st.warning("Could not find a Project / Site Name column in MasterProject sheet.")
         else:
@@ -2208,140 +2289,152 @@ with tab_map:
             if f_map_status != "All":
                 filtered_map_df = filtered_map_df[filtered_map_df[map_status_col].astype(str) == f_map_status]
 
-            with st.spinner("Plotting site locations on map..."):
-                map_rows = []
-                unmatched = []
-                for _, row in filtered_map_df.iterrows():
-                    proj_name = str(row.get(map_site_col, "")).strip()
-                    if not proj_name:
-                        continue
-                    state_val  = str(row.get(map_state_col, "")).strip() if map_state_col else ""
-                    dist_val   = str(row.get(map_dist_col, "")).strip() if map_dist_col else ""
-                    area_val   = str(row.get(map_area_col, "")).strip() if map_area_col else ""
-                    status_val = str(row.get(map_status_col, "")).strip() if map_status_col else "Unknown"
-                    tech_val   = str(row.get(map_tech_col, "")).strip() if map_tech_col else ""
-                    sales_val  = str(row.get(map_sales_col, "")).strip() if map_sales_col else ""
-                    ong_val    = str(row.get(map_ong_col, "")).strip() if map_ong_col else ""
+            map_rows = []
+            unmatched = []
+            for _, row in filtered_map_df.iterrows():
+                proj_name = str(row.get(map_site_col, "")).strip()
+                if not proj_name:
+                    continue
+                state_val  = str(row.get(map_state_col, "")).strip() if map_state_col else ""
+                dist_val   = str(row.get(map_dist_col, "")).strip() if map_dist_col else ""
+                area_val   = str(row.get(map_area_col, "")).strip() if map_area_col else ""
+                status_val = str(row.get(map_status_col, "")).strip() if map_status_col else "Unknown"
+                tech_val   = str(row.get(map_tech_col, "")).strip() if map_tech_col else ""
+                sales_val  = str(row.get(map_sales_col, "")).strip() if map_sales_col else ""
+                ong_val    = str(row.get(map_ong_col, "")).strip() if map_ong_col else ""
 
-                    # Geocode the address
-                    lat, lon, level = geocode_site_exact(proj_name, area_val, dist_val, state_val)
+                lat = lon = None
+                level = "Unknown"
+                
+                # 1. First check if the Google Sheet already has exact Lat/Lon columns provided by the user
+                if map_lat_col and map_lon_col:
+                    try:
+                        lat = float(str(row.get(map_lat_col, "")).strip())
+                        lon = float(str(row.get(map_lon_col, "")).strip())
+                        level = "Exact from Sheet"
+                    except ValueError:
+                        pass
+                        
+                # 2. Fast Hybrid Geocode (Dictionary first, API fallback)
+                if lat is None or lon is None:
+                    lat, lon, level = geocode_site(proj_name, area_val, dist_val, state_val)
 
-                    if lat is None:
-                        unmatched.append(proj_name)
-                        continue
+                if lat is None:
+                    unmatched.append(proj_name)
+                    continue
 
-                    map_rows.append({
-                        "Project": proj_name,
-                        "State": state_val or "-",
-                        "District/City": dist_val or "-",
-                        "Area": area_val or "-",
-                        "Status": status_val or "Unknown",
-                        "Technical Person": tech_val or "-",
-                        "Sales Person": sales_val or "-",
-                        "Ongoing": ong_val or "-",
-                        "lat": lat,
-                        "lon": lon,
-                        "Match Level": level,
-                    })
+                map_rows.append({
+                    "Project": proj_name,
+                    "State": state_val or "-",
+                    "District/City": dist_val or "-",
+                    "Area": area_val or "-",
+                    "Status": status_val or "Unknown",
+                    "Technical Person": tech_val or "-",
+                    "Sales Person": sales_val or "-",
+                    "Ongoing": ong_val or "-",
+                    "lat": lat,
+                    "lon": lon,
+                    "Match Level": level,
+                })
 
-                map_df = pd.DataFrame(map_rows)
+            map_df = pd.DataFrame(map_rows)
 
-                mk1, mk2, mk3, mk4 = st.columns(4)
-                mk1.metric("Sites Plotted", len(map_df))
-                mk2.metric("States Covered", map_df["State"].nunique() if not map_df.empty else 0)
-                mk3.metric("Cities/Districts", map_df["District/City"].nunique() if not map_df.empty else 0)
-                mk4.metric("Unmatched (not plotted)", len(unmatched))
+            mk1, mk2, mk3, mk4 = st.columns(4)
+            mk1.metric("Sites Plotted", len(map_df))
+            mk2.metric("States Covered", map_df["State"].nunique() if not map_df.empty else 0)
+            mk3.metric("Cities/Districts", map_df["District/City"].nunique() if not map_df.empty else 0)
+            mk4.metric("Unmatched (not plotted)", len(unmatched))
 
-                if unmatched:
-                    with st.expander(f"⚠️ {len(unmatched)} project(s) could not be plotted — location unknown"):
-                        st.write(", ".join(unmatched[:50]) + (" ..." if len(unmatched) > 50 else ""))
+            if unmatched:
+                with st.expander(f"⚠️ {len(unmatched)} project(s) could not be plotted — location completely unknown"):
+                    st.write(", ".join(unmatched[:50]) + (" ..." if len(unmatched) > 50 else ""))
+
+            st.markdown("---")
+
+            if map_df.empty:
+                st.info("No sites could be plotted with current filters/data.")
+            else:
+                # Determine map center dynamically
+                center_lat = map_df["lat"].mean()
+                center_lon = map_df["lon"].mean()
+                
+                # Zoom level based on filter depth
+                if f_map_area != "All":
+                    zoom_start = 12
+                elif f_map_city != "All":
+                    zoom_start = 10
+                elif f_map_state != "All":
+                    zoom_start = 6
+                else:
+                    zoom_start = 5
+
+                # Create Folium Map with Google Maps Tiles
+                m = folium.Map(
+                    location=[center_lat, center_lon],
+                    zoom_start=zoom_start,
+                    tiles="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}",
+                    attr="Google",
+                    control_scale=True # Adds scale bar at the bottom left
+                )
+
+                # Add Fullscreen Plugin
+                Fullscreen(
+                    position='topright',
+                    title='Expand Map',
+                    title_cancel='Exit Fullscreen',
+                    force_separate_button=True
+                ).add_to(m)
+
+                status_color_map = {
+                    "Completed": "green", "Complete": "green", "Done": "green",
+                    "Ongoing": "blue", "In Progress": "blue", "Active": "blue",
+                    "Pending": "orange", "On Hold": "orange", "Hold": "orange",
+                    "Cancelled": "red", "Canceled": "red", "Stopped": "red",
+                }
+
+                # Add Marker Clustering Plugin to prevent spider web overlaps
+                marker_cluster = MarkerCluster(name="Sites").add_to(m)
+
+                # Add Arrow Markers to the Cluster with dynamic Google Maps Search URL
+                for _, row in map_df.iterrows():
+                    marker_color = status_color_map.get(row['Status'], "gray")
+                    
+                    # Tell Google Maps to search for the specific project address instead of raw coordinates
+                    address_query = urllib.parse.quote(f"{row['Project']}, {row['Area']}, {row['District/City']}")
+                    directions_url = f"https://www.google.com/maps/dir/?api=1&destination={address_query}"
+                    
+                    popup_html = f"""
+                        <div style='font-family: Arial, sans-serif; min-width: 220px; font-size: 13px;'>
+                            <h4 style='margin-bottom: 5px; color: #1e3a8a;'>{escape(row['Project'])}</h4>
+                            <b>Area:</b> {escape(row['Area'])}<br>
+                            <b>City:</b> {escape(row['District/City'])}<br>
+                            <b>Status:</b> {escape(row['Status'])}<br>
+                            <b>Tech Person:</b> {escape(row['Technical Person'])}<br><br>
+                            <a href="{directions_url}" 
+                               target="_blank" 
+                               style="display: block; text-align: center; padding: 6px; background-color: #2563eb; color: white; text-decoration: none; border-radius: 6px; font-weight: bold;">
+                               📍 Get Directions
+                            </a>
+                        </div>
+                    """
+                    
+                    folium.Marker(
+                        location=[row['lat'], row['lon']],
+                        popup=folium.Popup(popup_html, max_width=300),
+                        tooltip=row['Project'],
+                        icon=folium.Icon(icon="location-arrow", prefix="fa", color=marker_color)
+                    ).add_to(marker_cluster)
+
+                # Display folium map in streamlit
+                with st.container(border=True):
+                    st_folium(m, width=1200, height=550, returned_objects=[])
+
+                st.caption(
+                    "🟦 Ongoing &nbsp;&nbsp; 🟩 Completed &nbsp;&nbsp; 🟧 Pending/Hold &nbsp;&nbsp; 🟥 Cancelled &nbsp;&nbsp; "
+                    "⬜ Unknown status. <br>Use the **Fullscreen button [ ]** in the top right. Scroll zoom is fully supported. Nearby markers are **clustered into groups** (click the numbers to reveal them). Click any marker to open GPS Directions."
+                )
 
                 st.markdown("---")
-
-                if map_df.empty:
-                    st.info("No sites could be plotted with current filters/data.")
-                else:
-                    # Determine map center dynamically
-                    center_lat = map_df["lat"].mean()
-                    center_lon = map_df["lon"].mean()
-                    
-                    # Zoom level based on filter depth
-                    if f_map_area != "All":
-                        zoom_start = 12
-                    elif f_map_city != "All":
-                        zoom_start = 10
-                    elif f_map_state != "All":
-                        zoom_start = 6
-                    else:
-                        zoom_start = 5
-
-                    # Create Folium Map with Google Maps Tiles
-                    m = folium.Map(
-                        location=[center_lat, center_lon],
-                        zoom_start=zoom_start,
-                        tiles="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}",
-                        attr="Google",
-                        control_scale=True # Adds scale bar at the bottom left
-                    )
-
-                    # Add Fullscreen Plugin
-                    Fullscreen(
-                        position='topright',
-                        title='Expand Map',
-                        title_cancel='Exit Fullscreen',
-                        force_separate_button=True
-                    ).add_to(m)
-
-                    status_color_map = {
-                        "Completed": "green", "Complete": "green", "Done": "green",
-                        "Ongoing": "blue", "In Progress": "blue", "Active": "blue",
-                        "Pending": "orange", "On Hold": "orange", "Hold": "orange",
-                        "Cancelled": "red", "Canceled": "red", "Stopped": "red",
-                    }
-
-                    # Add Marker Clustering Plugin to prevent spider web overlaps
-                    marker_cluster = MarkerCluster(name="Sites").add_to(m)
-
-                    # Add Arrow Markers to the Cluster with dynamic Google Maps Search URL
-                    for _, row in map_df.iterrows():
-                        marker_color = status_color_map.get(row['Status'], "gray")
-                        
-                        # Tell Google Maps to search for the specific project address instead of raw coordinates
-                        address_query = urllib.parse.quote(f"{row['Project']}, {row['Area']}, {row['District/City']}")
-                        directions_url = f"https://www.google.com/maps/dir/?api=1&destination={address_query}"
-                        
-                        popup_html = f"""
-                            <div style='font-family: Arial, sans-serif; min-width: 220px; font-size: 13px;'>
-                                <h4 style='margin-bottom: 5px; color: #1e3a8a;'>{escape(row['Project'])}</h4>
-                                <b>Area:</b> {escape(row['Area'])}<br>
-                                <b>City:</b> {escape(row['District/City'])}<br>
-                                <b>Status:</b> {escape(row['Status'])}<br>
-                                <b>Tech Person:</b> {escape(row['Technical Person'])}<br><br>
-                                <a href="{directions_url}" 
-                                   target="_blank" 
-                                   style="display: block; text-align: center; padding: 6px; background-color: #2563eb; color: white; text-decoration: none; border-radius: 6px; font-weight: bold;">
-                                   📍 Get Directions
-                                </a>
-                            </div>
-                        """
-                        
-                        folium.Marker(
-                            location=[row['lat'], row['lon']],
-                            popup=folium.Popup(popup_html, max_width=300),
-                            tooltip=row['Project'],
-                            icon=folium.Icon(icon="location-arrow", prefix="fa", color=marker_color)
-                        ).add_to(marker_cluster)
-
-                    # Display folium map in streamlit
-                    with st.container(border=True):
-                        st_folium(m, width=1200, height=550, returned_objects=[])
-
-                    st.caption(
-                        "🟦 Ongoing &nbsp;&nbsp; 🟩 Completed &nbsp;&nbsp; 🟧 Pending/Hold &nbsp;&nbsp; 🟥 Cancelled &nbsp;&nbsp; "
-                        "⬜ Unknown status. <br>Use the **Fullscreen button [ ]** in the top right. Scroll zoom is fully supported. Nearby markers are **clustered into groups** (click the numbers to reveal them). Click any marker to open GPS Directions."
-                    )
-
-                    st.markdown("---")
-                    st.subheader("Plotted Sites — Detail Table")
-                    table_cols_map = ["Project", "State", "District/City", "Area", "Status", "Technical Person", "Sales Person", "Ongoing", "Match Level"]
-                    st.dataframe(map_df[table_cols_map], use_container_width=True, hide_index=True)
+                st.subheader("Plotted Sites — Detail Table")
+                table_cols_map = ["Project", "State", "District/City", "Area", "Status", "Technical Person", "Sales Person", "Ongoing", "Match Level"]
+                st.dataframe(map_df[table_cols_map], use_container_width=True, hide_index=True)
