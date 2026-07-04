@@ -93,7 +93,7 @@ st.markdown("""
         box-shadow: 0 8px 32px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.08);
         transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
     }
-    div[data-testid="stMetric"]:hover {
+    div[data-testid="stAppViewContainer"] div[data-testid="stMetric"]:hover {
         transform: translateY(-2px);
         box-shadow: 0 12px 40px rgba(56,189,248,0.25), inset 0 1px 0 rgba(255,255,255,0.1);
         border-color: rgba(56,189,248,0.5) !important;
@@ -329,6 +329,15 @@ if not st.session_state["authenticated"]:
 
     st.stop()
 
+st.sidebar.markdown(f"👤 **{st.session_state.get('user_email', '')}**")
+if st.sidebar.button("🚪 Logout"):
+    st.session_state["authenticated"] = False
+    st.session_state["user_email"] = None
+    st.cache_data.clear()
+    st.cache_resource.clear()
+    st.rerun()
+
+st.sidebar.markdown("---")
 
 @st.cache_resource
 def init_connection():
@@ -637,6 +646,7 @@ ISSUE_TYPES = [
 ]
 STATUS_OPTIONS_ISSUE = ["Open", "In Progress", "Resolved", "Closed"]
 
+
 def ensure_issues_sheet():
     spreadsheet = client.open_by_url(SHEET_URL)
     try:
@@ -645,6 +655,7 @@ def ensure_issues_sheet():
         ws = spreadsheet.add_worksheet(title=ISSUES_SHEET_NAME, rows=2000, cols=len(ISSUE_HEADERS))
         ws.append_row(ISSUE_HEADERS)
     return ws
+
 
 @st.cache_data(ttl=60)
 def load_issues():
@@ -664,6 +675,7 @@ def load_issues():
         st.error(f"Could not load issues: {e}")
         return pd.DataFrame(columns=ISSUE_HEADERS)
 
+
 def generate_issue_id(issues_df):
     if issues_df.empty or "Issue ID" not in issues_df.columns:
         return "ISS-001"
@@ -675,6 +687,7 @@ def generate_issue_id(issues_df):
             pass
     return f"ISS-{str(max(nums) + 1 if nums else 1).zfill(3)}"
 
+
 def add_issue_to_sheet(row_data):
     try:
         ws = ensure_issues_sheet()
@@ -684,6 +697,7 @@ def add_issue_to_sheet(row_data):
     except Exception as e:
         st.error(f"Failed to save issue: {e}")
         return False
+
 
 def update_issue_in_sheet(issue_id, new_status, resolution_notes):
     try:
@@ -712,9 +726,14 @@ def update_issue_in_sheet(issue_id, new_status, resolution_notes):
         st.error(f"Failed to update issue: {e}")
         return False
 
+
 def build_executive_pdf(display_df, total_floors, total_sites, total_sent, total_pending,
                          selected_month, highest_coverage_str, highest_prod_str, critical_gaps_str,
                          summary_df):
+    """
+    Builds a print-ready PDF of the Executive Dashboard for monthly review meetings.
+    Returns bytes.
+    """
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
         buffer, pagesize=landscape(A4),
@@ -829,6 +848,11 @@ def build_executive_pdf(display_df, total_floors, total_sites, total_sent, total
 
 
 def build_scanned_issues_excel(result_df):
+    """
+    Builds a color-coded Excel for AI-scanned (not-yet-saved) issues.
+    Color by Severity since these aren't in tracker yet (no Status).
+    result_df expects columns: site_name, issue_type, severity, description, raised_by, raised_date
+    """
     wb = Workbook()
     ws = wb.active
     ws.title = "AI Detected Issues"
@@ -898,6 +922,11 @@ def build_scanned_issues_excel(result_df):
 
 
 def build_issues_excel(issues_df):
+    """
+    Builds a color-coded Excel report of issues.
+    Resolved/Closed = green row, Open = red row, In Progress = yellow row.
+    Returns bytes.
+    """
     wb = Workbook()
     ws = wb.active
     ws.title = "Site Issues"
@@ -987,88 +1016,10 @@ def build_issues_excel(issues_df):
 
 
 # ==========================================
-# AI COMMENT ANALYZER
+# SITE MAP — DYNAMIC GEOCODING WITH GEOPY
 # ==========================================
 
-def analyze_comments_for_issues(comment_records):
-    api_key = st.secrets.get("gemini_api_key", "")
-    if not api_key:
-        raise ValueError("gemini_api_key not found in Streamlit secrets.")
-
-    valid = [r for r in comment_records if str(r.get("comment", "")).strip() not in ["", "-", "nan", "None"]]
-    if not valid:
-        return []
-
-    prompt = f"""You are a senior plumbing site inspection analyst for Huliot Pipes & Fittings (West Zone India).
-Analyze the following site visit comments. Extract ONLY real issues — defects, non-compliances, problems, pending work, or observations that need action.
-Skip: general progress updates, positive comments, routine check-ins with no problems.
-
-Visit Comments:
-{json.dumps(valid, indent=2, ensure_ascii=False)}
-
-Return a JSON array. Each item:
-{{
-  "site_name": "exact site name from the record",
-  "issue_type": "one of: Installation Defect | Material Issue | Design Non-compliance | Slope / Drainage Issue | Trap / Seal Issue | Contractor Non-compliance | Waterproofing Issue | Clamp / Support Issue | Pipe Damage | Other",
-  "severity": "High | Medium | Low",
-  "description": "clear 1-2 sentence description of the issue",
-  "raised_by": "associate name from the record",
-  "raised_date": "date from the record"
-}}
-
-Rules:
-- One issue per finding (split if multiple distinct issues in one comment)
-- High = safety risk / major defect / warranty risk
-- Medium = non-compliance / rework needed
-- Low = minor observation / cosmetic
-- Return ONLY valid JSON array, no other text, no markdown fences."""
-
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
-    headers = {"content-type": "application/json"}
-    payload = {
-        "contents": [
-            {"parts": [{"text": prompt}]}
-        ],
-        "generationConfig": {
-            "temperature": 0.2,
-            "maxOutputTokens": 8192,
-            "responseMimeType": "application/json"
-        }
-    }
-
-    response = requests.post(url, headers=headers, json=payload, timeout=60)
-    data = response.json()
-
-    if response.status_code != 200:
-        err_msg = data.get("error", {}).get("message", "Gemini API error")
-        raise Exception(err_msg)
-
-    try:
-        candidate = data["candidates"][0]
-        raw_text = candidate["content"]["parts"][0]["text"].strip()
-    except (KeyError, IndexError):
-        raise Exception("Unexpected Gemini response format — no content returned.")
-
-    finish_reason = candidate.get("finishReason", "")
-    if finish_reason == "MAX_TOKENS":
-        raise Exception(
-            "Gemini response got cut off (too many comments at once). "
-            "Try scanning fewer comments — filter by Month or Associate first, then scan."
-        )
-
-    if raw_text.startswith("```"):
-        raw_text = raw_text.split("```")[1]
-        if raw_text.startswith("json"):
-            raw_text = raw_text[4:]
-    raw_text = raw_text.strip()
-
-    return json.loads(raw_text)
-
-
-# ==========================================
-# SITE MAP — INSTANT DICTIONARY HYBRID GEOCODING
-# ==========================================
-
+# High-speed coordinate cache for standard operating zones to optimize processing bounds
 CITY_COORDS = {
     "mumbai": (19.0760, 72.8777), "pune": (18.5204, 73.8567),
     "baner": (18.5590, 73.7868), "hinjewadi": (18.5913, 73.7389), "wakad": (18.5987, 73.7688),
@@ -1152,7 +1103,7 @@ def geocode_site(project, area, city, state):
             if key in c or c in key: return lat, lon, "City (Instant)"
     if s and s in STATE_COORDS: return STATE_COORDS[s][0], STATE_COORDS[s][1], "State (Instant)"
 
-    geolocator = Nominatim(user_agent="huliot_site_analytics_app_v2")
+    geolocator = Nominatim(user_agent="huliot_site_analytics_app_v3")
     queries = []
     if project and area and city: queries.append(f"{project}, {area}, {city}, India")
     if area and city: queries.append(f"{area}, {city}, {state}, India")
@@ -1166,6 +1117,7 @@ def geocode_site(project, area, city, state):
             continue
             
     return None, None, "Not Found"
+
 
 # --- 4. Load Data ---
 @st.cache_data(ttl=120)
@@ -2021,7 +1973,7 @@ with tab_issues:
                     ]["Issue ID"].dropna().tolist() if "Status" in issues_df.columns else issues_df["Issue ID"].dropna().tolist()
 
                     if not updatable:
-                        st.success("✅ All issues are resolved or closed.")
+                        st.success("¼ All issues are resolved or closed.")
                     else:
                         u1, u2 = st.columns(2)
                         with u1:
@@ -2030,7 +1982,7 @@ with tab_issues:
                                 match = issues_df[issues_df["Issue ID"] == sel_issue_id]
                                 if not match.empty:
                                     desc_val = match.iloc[0].get("Description", "-")
-                                    st.caption(f"📝 {desc_val[:120]}{'...' if len(str(desc_val)) > 120 else ''}")
+                                    st.caption(f"ð {desc_val[:120]}{'...' if len(str(desc_val)) > 120 else ''}")
                         with u2:
                             new_status = st.selectbox("New Status", STATUS_OPTIONS_ISSUE, key="update_issue_status")
 
@@ -2041,12 +1993,12 @@ with tab_issues:
                             height=80
                         )
 
-                        if st.button("✅ Update Issue", key="btn_update_issue", use_container_width=True):
+                        if st.button("¼ Update Issue", key="btn_update_issue", use_container_width=True):
                             if sel_issue_id:
                                 with st.spinner("Updating..."):
                                     ok = update_issue_in_sheet(sel_issue_id, new_status, resolution_note)
                                 if ok:
-                                    st.success(f"✅ {sel_issue_id} → '{new_status}'")
+                                    st.success(f"¼ {sel_issue_id} \u2192 '{new_status}'")
                                     st.rerun()
                                 else:
                                     st.error("Update failed. Check sheet access.")
@@ -2056,7 +2008,7 @@ with tab_issues:
 
         _fresh = load_issues()
         new_id = generate_issue_id(_fresh)
-        st.info(f"🆔 New Issue ID will be: **{new_id}**")
+        st.info(f"ð New Issue ID will be: **{new_id}**")
 
         with st.form("raise_issue_form", clear_on_submit=True):
             ra1, ra2 = st.columns(2)
@@ -2064,11 +2016,11 @@ with tab_issues:
             with ra1:
                 issue_site = st.selectbox(
                     "Site Name *",
-                    all_sites_issues if all_sites_issues else ["— No sites found —"],
+                    all_sites_issues if all_sites_issues else ["â No sites found â"],
                     key="ni_site"
                 )
                 issue_type = st.selectbox("Issue Type *", ISSUE_TYPES, key="ni_type")
-                issue_sev  = st.selectbox("Severity *", ["🔴 High", "🟡 Medium", "🟢 Low"], key="ni_sev")
+                issue_sev  = st.selectbox("Severity *", ["ð High", "ð Medium", "ð Low"], key="ni_sev")
                 issue_raised_by = st.text_input(
                     "Raised By *",
                     value=st.session_state.get("user_email", ""),
@@ -2078,8 +2030,8 @@ with tab_issues:
             with ra2:
                 issue_raised_date = st.date_input("Raised Date *", value=datetime.today(), key="ni_raised_date")
                 if associate_list:
-                    _assigned_raw = st.selectbox("Assign To", ["— Unassigned —"] + associate_list, key="ni_assigned")
-                    issue_assigned = "" if _assigned_raw == "— Unassigned —" else _assigned_raw
+                    _assigned_raw = st.selectbox("Assign To", ["â Unassigned â"] + associate_list, key="ni_assigned")
+                    issue_assigned = "" if _assigned_raw == "â Unassigned â" else _assigned_raw
                 else:
                     issue_assigned = st.text_input("Assign To", placeholder="Name of person responsible", key="ni_assigned_txt")
 
@@ -2087,12 +2039,12 @@ with tab_issues:
 
             issue_desc = st.text_area(
                 "Issue Description *",
-                placeholder="Describe clearly — location, condition, what was observed, any NBC/Huliot non-compliance...",
+                placeholder="Describe clearly \u2014 location, condition, what was observed, any NBC/Huliot non-compliance...",
                 height=130,
                 key="ni_desc"
             )
 
-            submitted = st.form_submit_button("🚨 Raise Issue", use_container_width=True)
+            submitted = st.form_submit_button("ð Raise Issue", use_container_width=True)
 
             if submitted:
                 if not issue_desc.strip():
@@ -2119,7 +2071,7 @@ with tab_issues:
                     with st.spinner("Saving to Google Sheet..."):
                         ok = add_issue_to_sheet(row_data)
                     if ok:
-                        st.success(f"✅ Issue **{new_id}** raised successfully! Click 'Refresh Issues' to see it in the log.")
+                        st.success(f"¼ Issue **{new_id}** raised successfully! Click 'Refresh Issues' to see it in the log.")
                     else:
                         st.error("Failed to save. Check Google Sheet access.")
 
@@ -2154,7 +2106,7 @@ with tab_issues:
 
             with ch3:
                 with st.container(border=True):
-                    st.markdown("##### Top Sites — Open Issues")
+                    st.markdown("##### Top Sites \u2014 Open Issues")
                     if "Site Name" in issues_df.columns and "Status" in issues_df.columns:
                         open_df = issues_df[issues_df["Status"].isin(["Open", "In Progress"])]
                         if not open_df.empty:
@@ -2165,7 +2117,7 @@ with tab_issues:
                             fig_ts.update_layout(yaxis=dict(autorange="reversed"))
                             st.plotly_chart(fig_ts, use_container_width=True, key="chart_issue_sites")
                         else:
-                            st.success("✅ No open issues across any site!")
+                            st.success("¼ No open issues across any site!")
 
             with ch4:
                 with st.container(border=True):
@@ -2195,11 +2147,11 @@ with tab_issues:
 
 
 # ==========================================
-# TAB 6: SITE MAP (PLOTLY MAPBOX WITH INTERACTIVE LEGEND)
+# TAB 6: SITE MAP (PLOTLY MAPBOX WITH LEGEND INTERACTIVITY)
 # ==========================================
 with tab_map:
     st.markdown("### 🗺️ Site Map (Google Maps View)")
-    st.markdown("Geographic view of every project in **MasterProject** — Filter easily by State ➔ City ➔ Area. **Click legend items to isolate statuses.**")
+    st.markdown("Geographic view of every project in **MasterProject** — Filter easily by State \u2794 City \u2794 Area.")
 
     if master_df.empty:
         st.warning("No MasterProject data found.")
@@ -2213,7 +2165,6 @@ with tab_map:
         map_sales_col  = safe_col(master_df, ["Sells Person", "SALES PERSON NAME", "SALES PERSON", "Sales Person"])
         map_ong_col    = safe_col(master_df, ["VISIT ONGOING", "Visit Ongoing"])
 
-        # Checking if user already added explicit Latitude / Longitude columns to their sheet
         map_lat_col    = safe_col(master_df, ["Latitude", "Lat", "LATITUDE"])
         map_lon_col    = safe_col(master_df, ["Longitude", "Lon", "Long", "LONGITUDE"])
 
@@ -2266,7 +2217,6 @@ with tab_map:
                     lat = lon = None
                     level = "Unknown"
                     
-                    # 1. First check if the Google Sheet already has exact Lat/Lon columns provided by the user
                     if map_lat_col and map_lon_col:
                         try:
                             lat = float(str(row.get(map_lat_col, "")).strip())
@@ -2275,7 +2225,6 @@ with tab_map:
                         except ValueError:
                             pass
                             
-                    # 2. Fast Hybrid Geocode (Dictionary first, API fallback)
                     if lat is None or lon is None:
                         lat, lon, level = geocode_site(proj_name, area_val, dist_val, state_val)
 
@@ -2306,7 +2255,7 @@ with tab_map:
                 mk4.metric("Unmatched (not plotted)", len(unmatched))
 
                 if unmatched:
-                    with st.expander(f"⚠️ {len(unmatched)} project(s) could not be plotted — location completely unknown"):
+                    with st.expander(f"â \u26a0ï {len(unmatched)} project(s) could not be plotted \u2014 location completely unknown"):
                         st.write(", ".join(unmatched[:50]) + (" ..." if len(unmatched) > 50 else ""))
 
                 st.markdown("---")
@@ -2314,31 +2263,21 @@ with tab_map:
                 if map_df.empty:
                     st.info("No sites could be plotted with current filters/data.")
                 else:
-                    # Create precise Plotly Mapbox using exactly the layout from user's image
+                    # Precise color mapping configuration matching targeted requirements
                     color_map = {
-                        "ONGOING": "#a855f7", # Purple
-                        "ongoing": "#a855f7", 
-                        "complited": "#f97316", # Orange
-                        "completed": "#f97316",
-                        "Holded": "#3b82f6", # Blue
-                        "hold": "#3b82f6",
-                        "Upcoming": "#ec4899", # Pink
-                        "upcoming": "#ec4899",
-                        "Mock Up": "#22c55e", # Green
-                        "mock up": "#22c55e",
-                        "Prospective": "#d946ef", # Lighter purple
-                        "prospective": "#d946ef",
-                        "Loss": "#eab308", # Yellow
-                        "loss": "#eab308",
-                        "Unknown": "#94a3b8",
-                        "unknown": "#94a3b8"
+                        "ONGOING": "#a855f7", "ongoing": "#a855f7",
+                        "complited": "#f97316", "completed": "#f97316", "complete": "#f97316", "done": "#f97316",
+                        "Holded": "#3b82f6", "hold": "#3b82f6", "pending": "#3b82f6", "on hold": "#3b82f6",
+                        "Upcoming": "#ec4899", "upcoming": "#ec4899",
+                        "Mock Up": "#22c55e", "mock up": "#22c55e",
+                        "Prospective": "#d946ef", "prospective": "#d946ef",
+                        "Loss": "#eab308", "loss": "#eab308",
+                        "Unknown": "#94a3b8", "unknown": "#94a3b8"
                     }
 
-                    # Determine map center dynamically
                     center_lat = map_df["lat"].mean()
                     center_lon = map_df["lon"].mean()
                     
-                    # Zoom level based on filter depth
                     if f_map_area != "All":
                         zoom_start = 12
                     elif f_map_city != "All":
@@ -2389,17 +2328,15 @@ with tab_map:
                     )
 
                     with st.container(border=True):
-                        # Force scrollZoom=True so mouse wheel works
-                        st.plotly_chart(fig_map, use_container_width=True, key="site_map_chart_plotly", config={"scrollZoom": True})
+                        st.plotly_chart(fig_map, use_container_width=True, key="site_map_chart_plotly_final", config={"scrollZoom": True})
 
-                    st.caption("✨ **Pro Tip:** Click any status in the legend box (top right) to hide or isolate those specific projects.")
+                    st.caption("â¨ **Pro Tip:** Click any status in the legend box (top right) to hide or isolate those specific projects.")
 
                     st.markdown("---")
-                    st.subheader("📍 Plotted Sites & GPS Directions")
+                    st.subheader("ð Plotted Sites & GPS Directions")
                     
-                    # Add Directions URL column dynamically for the table
                     map_df["Get Directions"] = map_df.apply(
-                        lambda r: f"https://www.google.com/maps/dir/?api=1&destination={r['lat']},{r['lon']}", axis=1
+                        lambda r: f"https://www.google.com/maps/dir/?api=1&destination={urllib.parse.quote(f'{r[\"Project\"]}, {r[\"Area\"]}, {r[\"District/City\"]}')}", axis=1
                     )
                     
                     table_cols_map = ["Project", "State", "District/City", "Area", "Status", "Technical Person", "Get Directions"]
@@ -2409,6 +2346,6 @@ with tab_map:
                         use_container_width=True, 
                         hide_index=True,
                         column_config={
-                            "Get Directions": st.column_config.LinkColumn("📍 Directions", display_text="Open Google Maps")
+                            "Get Directions": st.column_config.LinkColumn("ð Directions", display_text="Open Google Maps")
                         }
                     )
