@@ -2147,81 +2147,44 @@ with tab_issues:
 
 
 # ==========================================
-# TAB 6: SITE MAP (PLOTLY MAPBOX WITH LEGEND INTERACTIVITY)
+# TAB 6: SITE MAP (ACTUAL GOOGLE MAPS VIEW)
 # ==========================================
 with tab_map:
     st.markdown("### 🗺️ Site Map (Google Maps View)")
-    st.markdown("Geographic view of every project in **MasterProject** — Filter easily by State ➔ City ➔ Area. **Click legend items to isolate statuses.**")
+    st.markdown("Filter sites by status using the sidebar or list below.")
 
     if master_df.empty:
         st.warning("No MasterProject data found.")
     else:
-        map_site_col   = find_master_site_col(master_df)
-        map_state_col  = safe_col(master_df, ["STATE", "State"])
-        map_dist_col   = safe_col(master_df, ["DISTRICT / CITY", "DISTRICT", "District", "CITY", "City"])
-        map_area_col   = safe_col(master_df, ["Area", "AREA"])
-        map_status_col = safe_col(master_df, ["STATUS OF PROJECT", "Status", "STATUS"])
-        map_tech_col   = safe_col(master_df, ["Technical Person", "TECHNICAL PERSON NAME", "TECHNICAL PERSON"])
-        map_lat_col    = safe_col(master_df, ["Latitude", "Lat", "LATITUDE"])
-        map_lon_col    = safe_col(master_df, ["Longitude", "Lon", "Long", "LONGITUDE"])
+        # Define Google Maps tiles
+        google_tiles = "https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}"
+        
+        # Center map on India
+        m = folium.Map(location=[20.5937, 78.9629], zoom_start=5, 
+                       tiles=google_tiles, attr="Google", control_scale=True)
+        
+        Fullscreen().add_to(m)
+        marker_cluster = MarkerCluster().add_to(m)
 
-        # Filters
-        mf1, mf2, mf3 = st.columns(3)
-        with mf1:
-            f_state = st.selectbox("State", ["All"] + clean_options(master_df[map_state_col]))
-        with mf2:
-            f_dist = st.selectbox("City / District", ["All"] + clean_options(master_df[map_dist_col]))
-        with mf3:
-            f_status = st.selectbox("Project Status", ["All"] + clean_options(master_df[map_status_col]))
-
-        filtered_map_df = master_df.copy()
-        if f_state != "All": filtered_map_df = filtered_map_df[filtered_map_df[map_state_col] == f_state]
-        if f_dist != "All": filtered_map_df = filtered_map_df[filtered_map_df[map_dist_col] == f_dist]
-        if f_status != "All": filtered_map_df = filtered_map_df[filtered_map_df[map_status_col] == f_status]
-
-        # Prepare Map Data
-        map_rows = []
-        for _, row in filtered_map_df.iterrows():
+        # Plot sites
+        for _, row in master_df.iterrows():
             lat = row.get("Latitude")
             lon = row.get("Longitude")
-            # Fallback if lat/lon missing
-            if pd.isna(lat) or pd.isna(lon):
-                lat, lon, _ = geocode_site(row.get(map_site_col), row.get(map_area_col), row.get(map_dist_col), row.get(map_state_col))
             
-            if lat:
-                map_rows.append({**row, "lat": lat, "lon": lon})
-
-        if not map_rows:
-            st.info("No sites to plot.")
-        else:
-            map_df = pd.DataFrame(map_rows)
-            color_map = {
-                "ONGOING": "#a855f7", "ongoing": "#a855f7",
-                "complited": "#f97316", "completed": "#f97316",
-                "Holded": "#3b82f6", "hold": "#3b82f6",
-                "Upcoming": "#ec4899", "upcoming": "#ec4899",
-                "Mock Up": "#22c55e", "mock up": "#22c55e",
-                "Prospective": "#d946ef", "prospective": "#d946ef",
-                "Loss": "#eab308", "loss": "#eab308"
-            }
-
-            fig_map = px.scatter_mapbox(
-                map_df, lat="lat", lon="lon", color="STATUS OF PROJECT",
-                color_discrete_map=color_map, hover_name="PROJECT",
-                zoom=5, height=600
-            )
-            fig_map.update_layout(mapbox_style="carto-darkmatter", margin={"r":0,"t":0,"l":0,"b":0})
-            st.plotly_chart(fig_map, use_container_width=True, config={"scrollZoom": True})
-
-            # Directions Table
-            st.subheader("📍 Site Directions")
-            def get_url(row):
+            if pd.notna(lat) and pd.notna(lon):
+                # Google Maps Directions URL
                 addr = urllib.parse.quote(f"{row['PROJECT']}, {row.get('DISTRICT / CITY', '')}")
-                return f"https://www.google.com/maps/dir/?api=1&destination={addr}"
+                url = f"https://www.google.com/maps/dir/?api=1&destination={addr}"
+                
+                # Marker with status-based color
+                status = str(row.get("STATUS OF PROJECT", "")).lower()
+                color = "purple" if "ongoing" in status else "green"
+                
+                folium.Marker(
+                    location=[lat, lon],
+                    popup=f"<b>{row['PROJECT']}</b><br>Status: {row['STATUS OF PROJECT']}<br><a href='{url}' target='_blank'>📍 Get Directions</a>",
+                    icon=folium.Icon(color=color, icon="location-arrow", prefix="fa")
+                ).add_to(marker_cluster)
 
-            map_df["Directions"] = map_df.apply(get_url, axis=1)
-            st.dataframe(
-                map_df[["PROJECT", "DISTRICT / CITY", "STATUS OF PROJECT", "Directions"]],
-                column_config={"Directions": st.column_config.LinkColumn("Get Directions", display_text="Open in Maps 📍")},
-                use_container_width=True, hide_index=True
-            )
+        # Render Google Map
+        st_folium(m, width=1400, height=600)
