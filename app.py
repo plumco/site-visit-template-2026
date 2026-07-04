@@ -7,6 +7,7 @@ import requests
 import json
 import io
 import folium
+from folium.plugins import Fullscreen, MarkerCluster
 from streamlit_folium import st_folium
 from google.oauth2.service_account import Credentials
 from html import escape
@@ -1106,7 +1107,6 @@ Rules:
 # SITE MAP — GEOCODING HELPERS
 # ==========================================
 
-# Added some key Pune areas for dynamic mapping functionality based on user request.
 CITY_COORDS = {
     "mumbai": (19.0760, 72.8777), "pune": (18.5204, 73.8567),
     "baner": (18.5590, 73.7868), "hinjewadi": (18.5913, 73.7389), "wakad": (18.5987, 73.7688),
@@ -2323,11 +2323,6 @@ with tab_map:
                 if map_df.empty:
                     st.info("No sites could be plotted with current filters/data.")
                 else:
-                    # Jitter overlapping points slightly so multiple projects in the same
-                    # city don't render as a single dot on top of each other.
-                    map_df["lat_jitter"] = map_df["lat"] + (pd.factorize(map_df["Project"])[0] % 9 - 4) * 0.005
-                    map_df["lon_jitter"] = map_df["lon"] + (pd.factorize(map_df["Project"])[0] % 7 - 3) * 0.005
-
                     # Determine map center dynamically
                     center_lat = map_df["lat"].mean()
                     center_lon = map_df["lon"].mean()
@@ -2347,8 +2342,17 @@ with tab_map:
                         location=[center_lat, center_lon],
                         zoom_start=zoom_start,
                         tiles="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}",
-                        attr="Google"
+                        attr="Google",
+                        control_scale=True # Adds scale bar at the bottom left
                     )
+
+                    # Add Fullscreen Plugin
+                    Fullscreen(
+                        position='topright',
+                        title='Expand Map',
+                        title_cancel='Exit Fullscreen',
+                        force_separate_button=True
+                    ).add_to(m)
 
                     status_color_map = {
                         "Completed": "green", "Complete": "green", "Done": "green",
@@ -2357,7 +2361,10 @@ with tab_map:
                         "Cancelled": "red", "Canceled": "red", "Stopped": "red",
                     }
 
-                    # Add Arrow Markers to Map
+                    # Add Marker Clustering Plugin (groups nearby markers dynamically)
+                    marker_cluster = MarkerCluster(name="Sites").add_to(m)
+
+                    # Add Arrow Markers to the Cluster (not directly to the map)
                     for _, row in map_df.iterrows():
                         marker_color = status_color_map.get(row['Status'], "gray")
                         
@@ -2372,11 +2379,11 @@ with tab_map:
                         """
                         
                         folium.Marker(
-                            location=[row['lat_jitter'], row['lon_jitter']],
+                            location=[row['lat'], row['lon']],
                             popup=folium.Popup(popup_html, max_width=300),
                             tooltip=row['Project'],
                             icon=folium.Icon(icon="location-arrow", prefix="fa", color=marker_color)
-                        ).add_to(m)
+                        ).add_to(marker_cluster)
 
                     # Display folium map in streamlit
                     with st.container(border=True):
@@ -2384,7 +2391,7 @@ with tab_map:
 
                     st.caption(
                         "🟦 Ongoing &nbsp;&nbsp; 🟩 Completed &nbsp;&nbsp; 🟧 Pending/Hold &nbsp;&nbsp; 🟥 Cancelled &nbsp;&nbsp; "
-                        "⬜ Unknown status. Arrow markers point directly to the project general vicinity. Scroll zoom is fully supported."
+                        "⬜ Unknown status. <br>Use the **Fullscreen button [ ]** in the top right. Scroll zoom is fully supported. Nearby markers are **clustered into groups** (click the numbers to reveal them)."
                     )
 
                     st.markdown("---")
