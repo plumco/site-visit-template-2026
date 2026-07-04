@@ -6,9 +6,6 @@ import gspread
 import requests
 import json
 import io
-import folium
-from folium.plugins import Fullscreen, MarkerCluster
-from streamlit_folium import st_folium
 from google.oauth2.service_account import Credentials
 from html import escape
 from datetime import datetime
@@ -1109,7 +1106,6 @@ Rules:
 
 CITY_COORDS = {
     "mumbai": (19.0760, 72.8777), "pune": (18.5204, 73.8567),
-    "baner": (18.5590, 73.7868), "hinjewadi": (18.5913, 73.7389), "wakad": (18.5987, 73.7688),
     "nagpur": (21.1458, 79.0882), "nashik": (19.9975, 73.7898),
     "thane": (19.2183, 72.9781), "aurangabad": (19.8762, 75.3433),
     "chhatrapati sambhajinagar": (19.8762, 75.3433),
@@ -1176,17 +1172,13 @@ STATE_COORDS = {
 }
 
 
-def geocode_site(area, city_or_district, state):
+def geocode_site(city_or_district, state):
     """
     Returns (lat, lon, matched_level) or (None, None, None) if nothing matches.
-    It checks Area -> City -> State in hierarchy to plot it precisely if possible.
+    matched_level is 'city' or 'state' — used to show confidence to the user.
     """
-    a = str(area).strip().lower()
     c = str(city_or_district).strip().lower()
     s = str(state).strip().lower()
-
-    if a and a in CITY_COORDS:
-        return CITY_COORDS[a][0], CITY_COORDS[a][1], "area"
 
     if c and c in CITY_COORDS:
         return CITY_COORDS[c][0], CITY_COORDS[c][1], "city"
@@ -2219,13 +2211,12 @@ with tab_issues:
                         fig_ac.update_layout(yaxis=dict(autorange="reversed"), margin=dict(l=0, r=60, t=30, b=0))
                         st.plotly_chart(fig_ac, use_container_width=True, key="chart_issue_assignee")
 
-
 # ==========================================
-# TAB 6: SITE MAP (NOW USING FOLIUM FOR GOOGLE MAPS)
+# TAB 6: SITE MAP
 # ==========================================
 with tab_map:
-    st.markdown("### 🗺️ Site Map (Google Maps View)")
-    st.markdown("Geographic view of every project in **MasterProject** — Filter easily by State ➔ City ➔ Area.")
+    st.markdown("### 🗺️ Site Map")
+    st.markdown("Geographic view of every project in **MasterProject** — plotted by District/City, with State as fallback.")
 
     if master_df.empty:
         st.warning("No MasterProject data found.")
@@ -2233,7 +2224,6 @@ with tab_map:
         map_site_col   = find_master_site_col(master_df)
         map_state_col  = safe_col(master_df, ["STATE", "State"])
         map_dist_col   = safe_col(master_df, ["DISTRICT / CITY", "DISTRICT", "District", "CITY", "City"])
-        map_area_col   = safe_col(master_df, ["Area", "AREA"])
         map_status_col = safe_col(master_df, ["STATUS OF PROJECT", "Status", "STATUS"])
         map_tech_col   = safe_col(master_df, ["Technical Person", "TECHNICAL PERSON NAME", "TECHNICAL PERSON"])
         map_sales_col  = safe_col(master_df, ["Sells Person", "SALES PERSON NAME", "SALES PERSON", "Sales Person"])
@@ -2242,159 +2232,134 @@ with tab_map:
         if not map_site_col:
             st.warning("Could not find a Project / Site Name column in MasterProject sheet.")
         else:
-            # Cascading Hierarchical Filters
-            mf1, mf2, mf3, mf4 = st.columns(4)
-            
+            mf1, mf2, mf3 = st.columns(3)
             with mf1:
                 map_states = ["All"] + (clean_options(master_df[map_state_col]) if map_state_col else [])
                 f_map_state = st.selectbox("State", map_states, key="map_f_state")
-                
-            df_for_city = master_df if f_map_state == "All" else master_df[master_df[map_state_col].astype(str) == f_map_state]
-            
             with mf2:
-                map_cities = ["All"] + (clean_options(df_for_city[map_dist_col]) if map_dist_col else [])
-                f_map_city = st.selectbox("City / District", map_cities, key="map_f_city")
-                
-            df_for_area = df_for_city if f_map_city == "All" else df_for_city[df_for_city[map_dist_col].astype(str) == f_map_city]
-            
-            with mf3:
-                map_areas = ["All"] + (clean_options(df_for_area[map_area_col]) if map_area_col else [])
-                f_map_area = st.selectbox("Area", map_areas, key="map_f_area")
-                
-            filtered_map_df = df_for_area if f_map_area == "All" else df_for_area[df_for_area[map_area_col].astype(str) == f_map_area]
-            
-            with mf4:
-                map_statuses = ["All"] + (clean_options(filtered_map_df[map_status_col]) if map_status_col else [])
+                map_statuses = ["All"] + (clean_options(master_df[map_status_col]) if map_status_col else [])
                 f_map_status = st.selectbox("Project Status", map_statuses, key="map_f_status")
-                
-            if f_map_status != "All":
+            with mf3:
+                map_view = st.radio("Group markers by", ["City / District", "State"], key="map_view_mode", horizontal=True)
+
+            filtered_map_df = master_df.copy()
+            if map_state_col and f_map_state != "All":
+                filtered_map_df = filtered_map_df[filtered_map_df[map_state_col].astype(str) == f_map_state]
+            if map_status_col and f_map_status != "All":
                 filtered_map_df = filtered_map_df[filtered_map_df[map_status_col].astype(str) == f_map_status]
 
-            with st.spinner("Plotting sites on map..."):
-                map_rows = []
-                unmatched = []
-                for _, row in filtered_map_df.iterrows():
-                    proj_name = str(row.get(map_site_col, "")).strip()
-                    if not proj_name:
-                        continue
-                    state_val  = str(row.get(map_state_col, "")).strip() if map_state_col else ""
-                    dist_val   = str(row.get(map_dist_col, "")).strip() if map_dist_col else ""
-                    area_val   = str(row.get(map_area_col, "")).strip() if map_area_col else ""
-                    status_val = str(row.get(map_status_col, "")).strip() if map_status_col else "Unknown"
-                    tech_val   = str(row.get(map_tech_col, "")).strip() if map_tech_col else ""
-                    sales_val  = str(row.get(map_sales_col, "")).strip() if map_sales_col else ""
-                    ong_val    = str(row.get(map_ong_col, "")).strip() if map_ong_col else ""
+            map_rows = []
+            unmatched = []
+            for _, row in filtered_map_df.iterrows():
+                proj_name = str(row.get(map_site_col, "")).strip()
+                if not proj_name:
+                    continue
+                state_val  = str(row.get(map_state_col, "")).strip() if map_state_col else ""
+                dist_val   = str(row.get(map_dist_col, "")).strip() if map_dist_col else ""
+                status_val = str(row.get(map_status_col, "")).strip() if map_status_col else "Unknown"
+                tech_val   = str(row.get(map_tech_col, "")).strip() if map_tech_col else ""
+                sales_val  = str(row.get(map_sales_col, "")).strip() if map_sales_col else ""
+                ong_val    = str(row.get(map_ong_col, "")).strip() if map_ong_col else ""
 
-                    # Geocode taking Area into account first, then City, then State
-                    lat, lon, level = geocode_site(area_val, dist_val, state_val)
+                if map_view == "City / District" and dist_val:
+                    lat, lon, level = geocode_site(dist_val, state_val)
+                else:
+                    lat, lon, level = geocode_site("", state_val)
 
-                    if lat is None:
-                        unmatched.append(proj_name)
-                        continue
+                if lat is None:
+                    unmatched.append(proj_name)
+                    continue
 
-                    map_rows.append({
-                        "Project": proj_name,
-                        "State": state_val or "-",
-                        "District/City": dist_val or "-",
-                        "Area": area_val or "-",
-                        "Status": status_val or "Unknown",
-                        "Technical Person": tech_val or "-",
-                        "Sales Person": sales_val or "-",
-                        "Ongoing": ong_val or "-",
-                        "lat": lat,
-                        "lon": lon,
-                        "Match Level": level,
-                    })
+                map_rows.append({
+                    "Project": proj_name,
+                    "State": state_val or "-",
+                    "District/City": dist_val or "-",
+                    "Status": status_val or "Unknown",
+                    "Technical Person": tech_val or "-",
+                    "Sales Person": sales_val or "-",
+                    "Ongoing": ong_val or "-",
+                    "lat": lat,
+                    "lon": lon,
+                    "Match Level": level,
+                })
 
-                map_df = pd.DataFrame(map_rows)
+            map_df = pd.DataFrame(map_rows)
 
-                mk1, mk2, mk3, mk4 = st.columns(4)
-                mk1.metric("Sites Plotted", len(map_df))
-                mk2.metric("States Covered", map_df["State"].nunique() if not map_df.empty else 0)
-                mk3.metric("Cities/Districts", map_df["District/City"].nunique() if not map_df.empty else 0)
-                mk4.metric("Unmatched (not plotted)", len(unmatched))
+            mk1, mk2, mk3, mk4 = st.columns(4)
+            mk1.metric("Sites Plotted", len(map_df))
+            mk2.metric("States Covered", map_df["State"].nunique() if not map_df.empty else 0)
+            mk3.metric("Cities/Districts", map_df["District/City"].nunique() if not map_df.empty else 0)
+            mk4.metric("Unmatched (not plotted)", len(unmatched))
 
-                if unmatched:
-                    with st.expander(f"⚠️ {len(unmatched)} project(s) could not be plotted — missing/unrecognized Area, City, or State"):
-                        st.write(", ".join(unmatched[:50]) + (" ..." if len(unmatched) > 50 else ""))
+            if unmatched:
+                with st.expander(f"⚠️ {len(unmatched)} project(s) could not be plotted — missing/unrecognized City or State"):
+                    st.write(", ".join(unmatched[:50]) + (" ..." if len(unmatched) > 50 else ""))
+                    st.caption("Add a known city name to District/City column in MasterProject sheet, or check spelling, to plot these.")
+
+            st.markdown("---")
+
+            if map_df.empty:
+                st.info("No sites could be plotted with current filters/data.")
+            else:
+                # Jitter overlapping points slightly so multiple projects in the same
+                # city don't render as a single dot on top of each other.
+                map_df["lat_jitter"] = map_df["lat"] + (pd.factorize(map_df["Project"])[0] % 9 - 4) * 0.01
+                map_df["lon_jitter"] = map_df["lon"] + (pd.factorize(map_df["Project"])[0] % 7 - 3) * 0.01
+
+                status_color_map = {
+                    "Completed": "#22c55e", "Complete": "#22c55e", "Done": "#22c55e",
+                    "Ongoing": "#3b82f6", "In Progress": "#3b82f6", "Active": "#3b82f6",
+                    "Pending": "#f59e0b", "On Hold": "#f59e0b", "Hold": "#f59e0b",
+                    "Cancelled": "#ef4444", "Canceled": "#ef4444", "Stopped": "#ef4444",
+                    "Unknown": "#94a3b8",
+                }
+
+                fig_map = px.scatter_mapbox(
+                    map_df,
+                    lat="lat_jitter", lon="lon_jitter",
+                    color="Status",
+                    color_discrete_map=status_color_map,
+                    hover_name="Project",
+                    hover_data={
+                        "State": True, "District/City": True, "Status": True,
+                        "Technical Person": True, "Sales Person": True,
+                        "lat_jitter": False, "lon_jitter": False, "lat": False, "lon": False
+                    },
+                    zoom=4.4,
+                    center={"lat": 21.5, "lon": 78.5},
+                    height=560,
+                )
+                fig_map.update_traces(marker=dict(size=12, opacity=0.85))
+                fig_map.update_layout(
+                    mapbox_style="carto-darkmatter",
+                    margin=dict(l=0, r=0, t=0, b=0),
+                    legend=dict(
+                        bgcolor="rgba(15,23,42,0.7)",
+                        bordercolor="rgba(56,189,248,0.3)",
+                        borderwidth=1,
+                        font=dict(color="#CBD5E1"),
+                    ),
+                    paper_bgcolor="#13243D",
+                )
+
+                with st.container(border=True):
+                    st.plotly_chart(fig_map, use_container_width=True, key="site_map_chart")
+
+                st.caption(
+                    "🟦 Ongoing &nbsp;&nbsp; 🟩 Completed &nbsp;&nbsp; 🟧 Pending/Hold &nbsp;&nbsp; 🟥 Cancelled &nbsp;&nbsp; "
+                    "⬜ Unknown status — colors match each project's Status field. "
+                    "Markers slightly offset (jittered) when multiple sites share one city."
+                )
 
                 st.markdown("---")
+                st.subheader("Plotted Sites — Detail Table")
+                table_cols_map = ["Project", "State", "District/City", "Status", "Technical Person", "Sales Person", "Ongoing", "Match Level"]
+                st.dataframe(map_df[table_cols_map], use_container_width=True, hide_index=True)
 
-                if map_df.empty:
-                    st.info("No sites could be plotted with current filters/data.")
-                else:
-                    # Determine map center dynamically
-                    center_lat = map_df["lat"].mean()
-                    center_lon = map_df["lon"].mean()
-                    
-                    # Zoom level based on filter depth
-                    if f_map_area != "All":
-                        zoom_start = 12
-                    elif f_map_city != "All":
-                        zoom_start = 10
-                    elif f_map_state != "All":
-                        zoom_start = 6
-                    else:
-                        zoom_start = 5
-
-                    # Create Folium Map with Google Maps Tiles
-                    m = folium.Map(
-                        location=[center_lat, center_lon],
-                        zoom_start=zoom_start,
-                        tiles="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}",
-                        attr="Google",
-                        control_scale=True # Adds scale bar at the bottom left
-                    )
-
-                    # Add Fullscreen Plugin
-                    Fullscreen(
-                        position='topright',
-                        title='Expand Map',
-                        title_cancel='Exit Fullscreen',
-                        force_separate_button=True
-                    ).add_to(m)
-
-                    status_color_map = {
-                        "Completed": "green", "Complete": "green", "Done": "green",
-                        "Ongoing": "blue", "In Progress": "blue", "Active": "blue",
-                        "Pending": "orange", "On Hold": "orange", "Hold": "orange",
-                        "Cancelled": "red", "Canceled": "red", "Stopped": "red",
-                    }
-
-                    # Add Marker Clustering Plugin (groups nearby markers dynamically)
-                    marker_cluster = MarkerCluster(name="Sites").add_to(m)
-
-                    # Add Arrow Markers to the Cluster (not directly to the map)
-                    for _, row in map_df.iterrows():
-                        marker_color = status_color_map.get(row['Status'], "gray")
-                        
-                        popup_html = f"""
-                            <div style='font-family: Arial, sans-serif; min-width: 200px;'>
-                                <h4 style='margin-bottom: 5px; color: #1e3a8a;'>{escape(row['Project'])}</h4>
-                                <b>Area:</b> {escape(row['Area'])}<br>
-                                <b>City:</b> {escape(row['District/City'])}<br>
-                                <b>Status:</b> {escape(row['Status'])}<br>
-                                <b>Tech Person:</b> {escape(row['Technical Person'])}
-                            </div>
-                        """
-                        
-                        folium.Marker(
-                            location=[row['lat'], row['lon']],
-                            popup=folium.Popup(popup_html, max_width=300),
-                            tooltip=row['Project'],
-                            icon=folium.Icon(icon="location-arrow", prefix="fa", color=marker_color)
-                        ).add_to(marker_cluster)
-
-                    # Display folium map in streamlit
-                    with st.container(border=True):
-                        st_folium(m, width=1200, height=550, returned_objects=[])
-
-                    st.caption(
-                        "🟦 Ongoing &nbsp;&nbsp; 🟩 Completed &nbsp;&nbsp; 🟧 Pending/Hold &nbsp;&nbsp; 🟥 Cancelled &nbsp;&nbsp; "
-                        "⬜ Unknown status. <br>Use the **Fullscreen button [ ]** in the top right. Scroll zoom is fully supported. Nearby markers are **clustered into groups** (click the numbers to reveal them)."
-                    )
-
-                    st.markdown("---")
-                    st.subheader("Plotted Sites — Detail Table")
-                    table_cols_map = ["Project", "State", "District/City", "Area", "Status", "Technical Person", "Sales Person", "Ongoing", "Match Level"]
-                    st.dataframe(map_df[table_cols_map], use_container_width=True, hide_index=True)
+                st.markdown("---")
+                with st.container(border=True):
+                    st.markdown("##### Sites by State")
+                    state_summary = map_df["State"].value_counts().reset_index()
+                    state_summary.columns = ["State", "Sites"]
+                    fig_state_sum = px.bar(state_summary, x="State", y="Sites", color_discrete_sequence=["#38BDF8"])
+                    st.plotly_chart(fig_state_sum, use_container_width=True, key="map_state_summary_chart")
