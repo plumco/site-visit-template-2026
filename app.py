@@ -6,7 +6,6 @@ import gspread
 import requests
 import json
 import io
-import urllib.parse
 from google.oauth2.service_account import Credentials
 from html import escape
 from datetime import datetime
@@ -20,7 +19,6 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.graphics.shapes import Drawing
 from reportlab.graphics.charts.barcharts import VerticalBarChart
-from geopy.geocoders import Nominatim
 
 # --- Liquid Glass chart template ---
 _glass_template = pio.templates["plotly_dark"]
@@ -93,7 +91,7 @@ st.markdown("""
         box-shadow: 0 8px 32px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.08);
         transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
     }
-    div[data-testid="stAppViewContainer"] div[data-testid="stMetric"]:hover {
+    div[data-testid="stMetric"]:hover {
         transform: translateY(-2px);
         box-shadow: 0 12px 40px rgba(56,189,248,0.25), inset 0 1px 0 rgba(255,255,255,0.1);
         border-color: rgba(56,189,248,0.5) !important;
@@ -1016,15 +1014,98 @@ def build_issues_excel(issues_df):
 
 
 # ==========================================
-# SITE MAP — DYNAMIC GEOCODING WITH GEOPY
+# AI COMMENT ANALYZER
 # ==========================================
 
-# High-speed coordinate cache for standard operating zones to optimize processing bounds
+def analyze_comments_for_issues(comment_records):
+    """
+    comment_records: list of dicts with keys:
+      site_name, date, associate, comment
+    Returns: list of issue dicts
+    Requires st.secrets["gemini_api_key"]
+    """
+    api_key = st.secrets.get("gemini_api_key", "")
+    if not api_key:
+        raise ValueError("gemini_api_key not found in Streamlit secrets.")
+
+    valid = [r for r in comment_records if str(r.get("comment", "")).strip() not in ["", "-", "nan", "None"]]
+    if not valid:
+        return []
+
+    prompt = f"""You are a senior plumbing site inspection analyst for Huliot Pipes & Fittings (West Zone India).
+
+Analyze the following site visit comments. Extract ONLY real issues — defects, non-compliances, problems, pending work, or observations that need action.
+
+Skip: general progress updates, positive comments, routine check-ins with no problems.
+
+Visit Comments:
+{json.dumps(valid, indent=2, ensure_ascii=False)}
+
+Return a JSON array. Each item:
+{{
+  "site_name": "exact site name from the record",
+  "issue_type": "one of: Installation Defect | Material Issue | Design Non-compliance | Slope / Drainage Issue | Trap / Seal Issue | Contractor Non-compliance | Waterproofing Issue | Clamp / Support Issue | Pipe Damage | Other",
+  "severity": "High | Medium | Low",
+  "description": "clear 1-2 sentence description of the issue",
+  "raised_by": "associate name from the record",
+  "raised_date": "date from the record"
+}}
+
+Rules:
+- One issue per finding (split if multiple distinct issues in one comment)
+- High = safety risk / major defect / warranty risk
+- Medium = non-compliance / rework needed
+- Low = minor observation / cosmetic
+- Return ONLY valid JSON array, no other text, no markdown fences."""
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+    headers = {"content-type": "application/json"}
+    payload = {
+        "contents": [
+            {"parts": [{"text": prompt}]}
+        ],
+        "generationConfig": {
+            "temperature": 0.2,
+            "maxOutputTokens": 8192,
+            "responseMimeType": "application/json"
+        }
+    }
+
+    response = requests.post(url, headers=headers, json=payload, timeout=60)
+    data = response.json()
+
+    if response.status_code != 200:
+        err_msg = data.get("error", {}).get("message", "Gemini API error")
+        raise Exception(err_msg)
+
+    try:
+        candidate = data["candidates"][0]
+        raw_text = candidate["content"]["parts"][0]["text"].strip()
+    except (KeyError, IndexError):
+        raise Exception("Unexpected Gemini response format — no content returned.")
+
+    finish_reason = candidate.get("finishReason", "")
+    if finish_reason == "MAX_TOKENS":
+        raise Exception(
+            "Gemini response got cut off (too many comments at once). "
+            "Try scanning fewer comments — filter by Month or Associate first, then scan."
+        )
+
+    if raw_text.startswith("```"):
+        raw_text = raw_text.split("```")[1]
+        if raw_text.startswith("json"):
+            raw_text = raw_text[4:]
+    raw_text = raw_text.strip()
+
+    return json.loads(raw_text)
+
+
+# ==========================================
+# SITE MAP — GEOCODING HELPERS
+# ==========================================
+
 CITY_COORDS = {
     "mumbai": (19.0760, 72.8777), "pune": (18.5204, 73.8567),
-    "baner": (18.5590, 73.7868), "hinjewadi": (18.5913, 73.7389), "wakad": (18.5987, 73.7688),
-    "kharadi": (18.5515, 73.9348), "viman nagar": (18.5679, 73.9143), "hadapsar": (18.5089, 73.9259),
-    "kothrud": (18.5074, 73.8077), "pimpri": (18.6298, 73.7997), "chinchwad": (18.6270, 73.7828),
     "nagpur": (21.1458, 79.0882), "nashik": (19.9975, 73.7898),
     "thane": (19.2183, 72.9781), "aurangabad": (19.8762, 75.3433),
     "chhatrapati sambhajinagar": (19.8762, 75.3433),
@@ -1090,33 +1171,31 @@ STATE_COORDS = {
     "uttarakhand": (30.0668, 79.0193), "himachal pradesh": (31.1048, 77.1734),
 }
 
-@st.cache_data(show_spinner=False)
-def geocode_site(project, area, city, state):
-    a = str(area).strip().lower()
-    c = str(city).strip().lower()
+
+def geocode_site(city_or_district, state):
+    """
+    Returns (lat, lon, matched_level) or (None, None, None) if nothing matches.
+    matched_level is 'city' or 'state' — used to show confidence to the user.
+    """
+    c = str(city_or_district).strip().lower()
     s = str(state).strip().lower()
 
-    if a and a in CITY_COORDS: return CITY_COORDS[a][0], CITY_COORDS[a][1], "Area (Instant)"
-    if c and c in CITY_COORDS: return CITY_COORDS[c][0], CITY_COORDS[c][1], "City (Instant)"
+    if c and c in CITY_COORDS:
+        return CITY_COORDS[c][0], CITY_COORDS[c][1], "city"
+
     if c:
         for key, (lat, lon) in CITY_COORDS.items():
-            if key in c or c in key: return lat, lon, "City (Instant)"
-    if s and s in STATE_COORDS: return STATE_COORDS[s][0], STATE_COORDS[s][1], "State (Instant)"
+            if key in c or c in key:
+                return lat, lon, "city"
 
-    geolocator = Nominatim(user_agent="huliot_site_analytics_app_v3")
-    queries = []
-    if project and area and city: queries.append(f"{project}, {area}, {city}, India")
-    if area and city: queries.append(f"{area}, {city}, {state}, India")
-    if city and state: queries.append(f"{city}, {state}, India")
-        
-    for query in queries:
-        try:
-            location = geolocator.geocode(query, timeout=2)
-            if location: return location.latitude, location.longitude, "API Found"
-        except:
-            continue
-            
-    return None, None, "Not Found"
+    if s and s in STATE_COORDS:
+        return STATE_COORDS[s][0], STATE_COORDS[s][1], "state"
+    if s:
+        for key, (lat, lon) in STATE_COORDS.items():
+            if key in s or s in key:
+                return lat, lon, "state"
+
+    return None, None, None
 
 
 # --- 4. Load Data ---
@@ -1158,19 +1237,6 @@ def load_data():
 visits_df, master_df = load_data()
 
 with st.sidebar:
-    st.title("📊 Project Overview")
-    if not master_df.empty and "STATUS OF PROJECT" in master_df.columns:
-        status_opts = ["All"] + clean_options(master_df["STATUS OF PROJECT"])
-        global_status_filter = st.selectbox("🎯 Filter Entire App by Status", status_opts)
-        
-        if global_status_filter != "All":
-            master_df = master_df[master_df["STATUS OF PROJECT"].astype(str) == global_status_filter]
-
-        st.markdown("### Current Counts")
-        status_counts = master_df["STATUS OF PROJECT"].value_counts()
-        for status, count in status_counts.items():
-            st.metric(label=status, value=count)
-            
     if st.button("🔄 Refresh Data"):
         st.cache_data.clear()
         st.rerun()
@@ -1973,7 +2039,7 @@ with tab_issues:
                     ]["Issue ID"].dropna().tolist() if "Status" in issues_df.columns else issues_df["Issue ID"].dropna().tolist()
 
                     if not updatable:
-                        st.success("¼ All issues are resolved or closed.")
+                        st.success("✅ All issues are resolved or closed.")
                     else:
                         u1, u2 = st.columns(2)
                         with u1:
@@ -1982,7 +2048,7 @@ with tab_issues:
                                 match = issues_df[issues_df["Issue ID"] == sel_issue_id]
                                 if not match.empty:
                                     desc_val = match.iloc[0].get("Description", "-")
-                                    st.caption(f"ð {desc_val[:120]}{'...' if len(str(desc_val)) > 120 else ''}")
+                                    st.caption(f"📝 {desc_val[:120]}{'...' if len(str(desc_val)) > 120 else ''}")
                         with u2:
                             new_status = st.selectbox("New Status", STATUS_OPTIONS_ISSUE, key="update_issue_status")
 
@@ -1993,12 +2059,12 @@ with tab_issues:
                             height=80
                         )
 
-                        if st.button("¼ Update Issue", key="btn_update_issue", use_container_width=True):
+                        if st.button("✅ Update Issue", key="btn_update_issue", use_container_width=True):
                             if sel_issue_id:
                                 with st.spinner("Updating..."):
                                     ok = update_issue_in_sheet(sel_issue_id, new_status, resolution_note)
                                 if ok:
-                                    st.success(f"¼ {sel_issue_id} \u2192 '{new_status}'")
+                                    st.success(f"✅ {sel_issue_id} → '{new_status}'")
                                     st.rerun()
                                 else:
                                     st.error("Update failed. Check sheet access.")
@@ -2008,7 +2074,7 @@ with tab_issues:
 
         _fresh = load_issues()
         new_id = generate_issue_id(_fresh)
-        st.info(f"ð New Issue ID will be: **{new_id}**")
+        st.info(f"🆔 New Issue ID will be: **{new_id}**")
 
         with st.form("raise_issue_form", clear_on_submit=True):
             ra1, ra2 = st.columns(2)
@@ -2016,11 +2082,11 @@ with tab_issues:
             with ra1:
                 issue_site = st.selectbox(
                     "Site Name *",
-                    all_sites_issues if all_sites_issues else ["â No sites found â"],
+                    all_sites_issues if all_sites_issues else ["— No sites found —"],
                     key="ni_site"
                 )
                 issue_type = st.selectbox("Issue Type *", ISSUE_TYPES, key="ni_type")
-                issue_sev  = st.selectbox("Severity *", ["ð High", "ð Medium", "ð Low"], key="ni_sev")
+                issue_sev  = st.selectbox("Severity *", ["🔴 High", "🟡 Medium", "🟢 Low"], key="ni_sev")
                 issue_raised_by = st.text_input(
                     "Raised By *",
                     value=st.session_state.get("user_email", ""),
@@ -2030,8 +2096,8 @@ with tab_issues:
             with ra2:
                 issue_raised_date = st.date_input("Raised Date *", value=datetime.today(), key="ni_raised_date")
                 if associate_list:
-                    _assigned_raw = st.selectbox("Assign To", ["â Unassigned â"] + associate_list, key="ni_assigned")
-                    issue_assigned = "" if _assigned_raw == "â Unassigned â" else _assigned_raw
+                    _assigned_raw = st.selectbox("Assign To", ["— Unassigned —"] + associate_list, key="ni_assigned")
+                    issue_assigned = "" if _assigned_raw == "— Unassigned —" else _assigned_raw
                 else:
                     issue_assigned = st.text_input("Assign To", placeholder="Name of person responsible", key="ni_assigned_txt")
 
@@ -2039,12 +2105,12 @@ with tab_issues:
 
             issue_desc = st.text_area(
                 "Issue Description *",
-                placeholder="Describe clearly \u2014 location, condition, what was observed, any NBC/Huliot non-compliance...",
+                placeholder="Describe clearly — location, condition, what was observed, any NBC/Huliot non-compliance...",
                 height=130,
                 key="ni_desc"
             )
 
-            submitted = st.form_submit_button("ð Raise Issue", use_container_width=True)
+            submitted = st.form_submit_button("🚨 Raise Issue", use_container_width=True)
 
             if submitted:
                 if not issue_desc.strip():
@@ -2071,7 +2137,7 @@ with tab_issues:
                     with st.spinner("Saving to Google Sheet..."):
                         ok = add_issue_to_sheet(row_data)
                     if ok:
-                        st.success(f"¼ Issue **{new_id}** raised successfully! Click 'Refresh Issues' to see it in the log.")
+                        st.success(f"✅ Issue **{new_id}** raised successfully! Click 'Refresh Issues' to see it in the log.")
                     else:
                         st.error("Failed to save. Check Google Sheet access.")
 
@@ -2106,7 +2172,7 @@ with tab_issues:
 
             with ch3:
                 with st.container(border=True):
-                    st.markdown("##### Top Sites \u2014 Open Issues")
+                    st.markdown("##### Top Sites — Open Issues")
                     if "Site Name" in issues_df.columns and "Status" in issues_df.columns:
                         open_df = issues_df[issues_df["Status"].isin(["Open", "In Progress"])]
                         if not open_df.empty:
@@ -2117,7 +2183,7 @@ with tab_issues:
                             fig_ts.update_layout(yaxis=dict(autorange="reversed"))
                             st.plotly_chart(fig_ts, use_container_width=True, key="chart_issue_sites")
                         else:
-                            st.success("¼ No open issues across any site!")
+                            st.success("✅ No open issues across any site!")
 
             with ch4:
                 with st.container(border=True):
@@ -2146,50 +2212,154 @@ with tab_issues:
                         st.plotly_chart(fig_ac, use_container_width=True, key="chart_issue_assignee")
 
 # ==========================================
-# TAB 6: SITE MAP (GOOGLE MAPS VIEW)
+# TAB 6: SITE MAP
 # ==========================================
 with tab_map:
-    st.markdown("### 🗺️ Site Map (Google Maps View)")
-    
+    st.markdown("### 🗺️ Site Map")
+    st.markdown("Geographic view of every project in **MasterProject** — plotted by District/City, with State as fallback.")
+
     if master_df.empty:
         st.warning("No MasterProject data found.")
     else:
-        # Define Google Maps tiles
-        google_tiles = "https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}"
-        
-        # Initialize map
-        m = folium.Map(location=[20.5937, 78.9629], zoom_start=5, 
-                       tiles=google_tiles, attr="Google", control_scale=True)
-        
-        # Plugin features
-        Fullscreen().add_to(m)
-        
-        # Use MarkerCluster with spiderfy disabled to prevent "spider web" spiral
-        marker_cluster = MarkerCluster(
-            name="Sites", 
-            options={'spiderfyOnMaxZoom': False, 'zoomToBoundsOnClick': True}
-        ).add_to(m)
+        map_site_col   = find_master_site_col(master_df)
+        map_state_col  = safe_col(master_df, ["STATE", "State"])
+        map_dist_col   = safe_col(master_df, ["DISTRICT / CITY", "DISTRICT", "District", "CITY", "City"])
+        map_status_col = safe_col(master_df, ["STATUS OF PROJECT", "Status", "STATUS"])
+        map_tech_col   = safe_col(master_df, ["Technical Person", "TECHNICAL PERSON NAME", "TECHNICAL PERSON"])
+        map_sales_col  = safe_col(master_df, ["Sells Person", "SALES PERSON NAME", "SALES PERSON", "Sales Person"])
+        map_ong_col    = safe_col(master_df, ["VISIT ONGOING", "Visit Ongoing"])
 
-        # Plot sites
-        for _, row in master_df.iterrows():
-            lat = row.get("Latitude")
-            lon = row.get("Longitude")
-            
-            # Check if Lat/Lon exist
-            if pd.notna(lat) and pd.notna(lon):
-                # Google Maps Directions URL
-                addr = urllib.parse.quote(f"{row.get('PROJECT', '')}, {row.get('DISTRICT / CITY', '')}")
-                url = f"https://www.google.com/maps/dir/?api=1&destination={addr}"
-                
-                # Status based marker color
-                status = str(row.get("STATUS OF PROJECT", "")).lower()
-                color = "purple" if "ongoing" in status else ("orange" if "complited" in status else "blue")
-                
-                folium.Marker(
-                    location=[lat, lon],
-                    popup=f"<b>{row.get('PROJECT')}</b><br>Status: {row.get('STATUS OF PROJECT')}<br><a href='{url}' target='_blank'>📍 Get Directions</a>",
-                    icon=folium.Icon(color=color, icon="location-arrow", prefix="fa")
-                ).add_to(marker_cluster)
+        if not map_site_col:
+            st.warning("Could not find a Project / Site Name column in MasterProject sheet.")
+        else:
+            mf1, mf2, mf3 = st.columns(3)
+            with mf1:
+                map_states = ["All"] + (clean_options(master_df[map_state_col]) if map_state_col else [])
+                f_map_state = st.selectbox("State", map_states, key="map_f_state")
+            with mf2:
+                map_statuses = ["All"] + (clean_options(master_df[map_status_col]) if map_status_col else [])
+                f_map_status = st.selectbox("Project Status", map_statuses, key="map_f_status")
+            with mf3:
+                map_view = st.radio("Group markers by", ["City / District", "State"], key="map_view_mode", horizontal=True)
 
-        # Display map
-        st_folium(m, width=1200, height=550)
+            filtered_map_df = master_df.copy()
+            if map_state_col and f_map_state != "All":
+                filtered_map_df = filtered_map_df[filtered_map_df[map_state_col].astype(str) == f_map_state]
+            if map_status_col and f_map_status != "All":
+                filtered_map_df = filtered_map_df[filtered_map_df[map_status_col].astype(str) == f_map_status]
+
+            map_rows = []
+            unmatched = []
+            for _, row in filtered_map_df.iterrows():
+                proj_name = str(row.get(map_site_col, "")).strip()
+                if not proj_name:
+                    continue
+                state_val  = str(row.get(map_state_col, "")).strip() if map_state_col else ""
+                dist_val   = str(row.get(map_dist_col, "")).strip() if map_dist_col else ""
+                status_val = str(row.get(map_status_col, "")).strip() if map_status_col else "Unknown"
+                tech_val   = str(row.get(map_tech_col, "")).strip() if map_tech_col else ""
+                sales_val  = str(row.get(map_sales_col, "")).strip() if map_sales_col else ""
+                ong_val    = str(row.get(map_ong_col, "")).strip() if map_ong_col else ""
+
+                if map_view == "City / District" and dist_val:
+                    lat, lon, level = geocode_site(dist_val, state_val)
+                else:
+                    lat, lon, level = geocode_site("", state_val)
+
+                if lat is None:
+                    unmatched.append(proj_name)
+                    continue
+
+                map_rows.append({
+                    "Project": proj_name,
+                    "State": state_val or "-",
+                    "District/City": dist_val or "-",
+                    "Status": status_val or "Unknown",
+                    "Technical Person": tech_val or "-",
+                    "Sales Person": sales_val or "-",
+                    "Ongoing": ong_val or "-",
+                    "lat": lat,
+                    "lon": lon,
+                    "Match Level": level,
+                })
+
+            map_df = pd.DataFrame(map_rows)
+
+            mk1, mk2, mk3, mk4 = st.columns(4)
+            mk1.metric("Sites Plotted", len(map_df))
+            mk2.metric("States Covered", map_df["State"].nunique() if not map_df.empty else 0)
+            mk3.metric("Cities/Districts", map_df["District/City"].nunique() if not map_df.empty else 0)
+            mk4.metric("Unmatched (not plotted)", len(unmatched))
+
+            if unmatched:
+                with st.expander(f"⚠️ {len(unmatched)} project(s) could not be plotted — missing/unrecognized City or State"):
+                    st.write(", ".join(unmatched[:50]) + (" ..." if len(unmatched) > 50 else ""))
+                    st.caption("Add a known city name to District/City column in MasterProject sheet, or check spelling, to plot these.")
+
+            st.markdown("---")
+
+            if map_df.empty:
+                st.info("No sites could be plotted with current filters/data.")
+            else:
+                # Jitter overlapping points slightly so multiple projects in the same
+                # city don't render as a single dot on top of each other.
+                map_df["lat_jitter"] = map_df["lat"] + (pd.factorize(map_df["Project"])[0] % 9 - 4) * 0.01
+                map_df["lon_jitter"] = map_df["lon"] + (pd.factorize(map_df["Project"])[0] % 7 - 3) * 0.01
+
+                status_color_map = {
+                    "Completed": "#22c55e", "Complete": "#22c55e", "Done": "#22c55e",
+                    "Ongoing": "#3b82f6", "In Progress": "#3b82f6", "Active": "#3b82f6",
+                    "Pending": "#f59e0b", "On Hold": "#f59e0b", "Hold": "#f59e0b",
+                    "Cancelled": "#ef4444", "Canceled": "#ef4444", "Stopped": "#ef4444",
+                    "Unknown": "#94a3b8",
+                }
+
+                fig_map = px.scatter_mapbox(
+                    map_df,
+                    lat="lat_jitter", lon="lon_jitter",
+                    color="Status",
+                    color_discrete_map=status_color_map,
+                    hover_name="Project",
+                    hover_data={
+                        "State": True, "District/City": True, "Status": True,
+                        "Technical Person": True, "Sales Person": True,
+                        "lat_jitter": False, "lon_jitter": False, "lat": False, "lon": False
+                    },
+                    zoom=4.4,
+                    center={"lat": 21.5, "lon": 78.5},
+                    height=560,
+                )
+                fig_map.update_traces(marker=dict(size=12, opacity=0.85))
+                fig_map.update_layout(
+                    mapbox_style="carto-darkmatter",
+                    margin=dict(l=0, r=0, t=0, b=0),
+                    legend=dict(
+                        bgcolor="rgba(15,23,42,0.7)",
+                        bordercolor="rgba(56,189,248,0.3)",
+                        borderwidth=1,
+                        font=dict(color="#CBD5E1"),
+                    ),
+                    paper_bgcolor="#13243D",
+                )
+
+                with st.container(border=True):
+                    st.plotly_chart(fig_map, use_container_width=True, key="site_map_chart")
+
+                st.caption(
+                    "🟦 Ongoing &nbsp;&nbsp; 🟩 Completed &nbsp;&nbsp; 🟧 Pending/Hold &nbsp;&nbsp; 🟥 Cancelled &nbsp;&nbsp; "
+                    "⬜ Unknown status — colors match each project's Status field. "
+                    "Markers slightly offset (jittered) when multiple sites share one city."
+                )
+
+                st.markdown("---")
+                st.subheader("Plotted Sites — Detail Table")
+                table_cols_map = ["Project", "State", "District/City", "Status", "Technical Person", "Sales Person", "Ongoing", "Match Level"]
+                st.dataframe(map_df[table_cols_map], use_container_width=True, hide_index=True)
+
+                st.markdown("---")
+                with st.container(border=True):
+                    st.markdown("##### Sites by State")
+                    state_summary = map_df["State"].value_counts().reset_index()
+                    state_summary.columns = ["State", "Sites"]
+                    fig_state_sum = px.bar(state_summary, x="State", y="Sites", color_discrete_sequence=["#38BDF8"])
+                    st.plotly_chart(fig_state_sum, use_container_width=True, key="map_state_summary_chart")
