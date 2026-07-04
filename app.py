@@ -2235,89 +2235,67 @@ with tab_issues:
                         st.plotly_chart(fig_ac, use_container_width=True, key="chart_issue_assignee")
 
 
-# # ==========================================
-# TAB 6: SITE MAP (INTERACTIVE WITH JITTER & LEGEND)
+# ==========================================
+# TAB 6: FIXED SITE MAP (DEBUG MODE ENABLED)
 # ==========================================
 with tab_map:
     st.markdown("### 🗺️ Site Map")
-    st.markdown("Geographic view of projects filtered by Area/City. Markers jittered for visibility.")
-
-    # 1. Custom Legend CSS matching reference image_9dc511.jpg style
-    st.markdown("""
-    <style>
-        .map-container { position: relative; }
-        .map-legend {
-            background: rgba(15, 23, 42, 0.9);
-            padding: 12px;
-            border-radius: 8px;
-            border: 1px solid #334155;
-            color: #E2E8F0;
-            font-size: 11px;
-            position: absolute;
-            right: 20px;
-            top: 20px;
-            z-index: 1000;
-        }
-        .legend-item { display: flex; align-items: center; margin-bottom: 4px; }
-        .dot { height: 10px; width: 10px; border-radius: 50%; margin-right: 8px; }
-    </style>
-    """, unsafe_allow_html=True)
 
     if master_df.empty:
         st.warning("No MasterProject data found.")
     else:
-        # Define statuses and colors to match image_9dc511.jpg
+        # 1. Status Colors
         status_color_map = {
             "ONGOING": "#8b5cf6", "COMPLETED": "#10b981", "HOLDED": "#06b6d4",
             "UPCOMING": "#f43f5e", "MOCK UP": "#a3e635", "PROSPECTIVE": "#e879f9",
             "LOSS": "#fbbf24"
         }
 
-        # --- Re-use your existing filtering logic ---
+        # 2. Get Site Name Column
         map_site_col = find_master_site_col(master_df)
-        df_plot = master_df.copy() # Simplified for plotting
         
-        # --- Jitter Function ---
-        import random
-        def get_jitter(val):
-            # Small random offset to prevent perfect stacking
-            return val + (random.uniform(-0.03, 0.03))
-
-        # --- Create Folium Map ---
-        # Centered on India
-        m = folium.Map(location=[20.5937, 78.9629], zoom_start=5, tiles="cartodbpositron")
+        # 3. Process Data for Map
+        plot_data = []
+        failed_sites = []
         
-        # Add markers
-        for _, row in df_plot.iterrows():
-            # You must have the geocode_site function available from your previous code
-            lat, lon, _ = geocode_site(row.get(map_site_col), "", "", "")
+        for _, row in master_df.iterrows():
+            proj_name = row.get(map_site_col)
+            if not proj_name: continue
+            
+            # Use your existing geocode_site function
+            # If this returns None, the site won't show
+            lat, lon, level = geocode_site(proj_name, "", "", "")
             
             if lat and lon:
-                j_lat = get_jitter(lat)
-                j_lon = get_jitter(lon)
-                
-                # Default to grey if status not in our color map
-                status_key = str(row.get("Status", "Unknown")).upper()
-                color = status_color_map.get(status_key, "#94a3b8")
-                
-                folium.CircleMarker(
-                    location=[j_lat, j_lon],
-                    radius=6,
-                    popup=f"{row.get(map_site_col, 'Project')} - {status_key}",
-                    color=color,
-                    fill=True,
-                    fill_color=color,
-                    fill_opacity=0.8
-                ).add_to(m)
+                plot_data.append({
+                    "Project": proj_name,
+                    "lat": lat + (random.uniform(-0.02, 0.02)), # Jitter
+                    "lon": lon + (random.uniform(-0.02, 0.02)),
+                    "Status": str(row.get("Status", "Unknown")).upper()
+                })
+            else:
+                failed_sites.append(proj_name)
 
-        # --- Render Map with Legend ---
-        st.markdown('<div class="map-container">', unsafe_allow_html=True)
-        st_folium(m, width=1200, height=600)
-        
-        # Legend UI
-        legend_html = "<div class='map-legend'><strong>Status</strong><br>"
-        for status, color in status_color_map.items():
-            legend_html += f"<div class='legend-item'><div class='dot' style='background:{color}'></div>{status.capitalize()}</div>"
-        legend_html += "</div>"
-        st.markdown(legend_html, unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+        # 4. Display Stats
+        col1, col2 = st.columns(2)
+        col1.metric("Sites Plotted", len(plot_data))
+        col2.metric("Sites Missing Location", len(failed_sites))
+
+        if failed_sites:
+            with st.expander("Show sites that failed to locate"):
+                st.write(list(set(failed_sites)))
+
+        # 5. Render Map
+        if plot_data:
+            m = folium.Map(location=[20.5937, 78.9629], zoom_start=5, tiles="cartodbpositron")
+            for item in plot_data:
+                color = status_color_map.get(item["Status"], "#94a3b8")
+                folium.CircleMarker(
+                    location=[item["lat"], item["lon"]],
+                    radius=7,
+                    popup=f"{item['Project']} ({item['Status']})",
+                    color=color, fill=True, fill_opacity=0.8
+                ).add_to(m)
+            st_folium(m, width=1200, height=600)
+        else:
+            st.error("No sites could be plotted. Check if your project names contain valid city/area information.")
