@@ -6,6 +6,7 @@ import gspread
 import requests
 import json
 import io
+import time
 import urllib.parse
 import folium
 from folium.plugins import Fullscreen, MarkerCluster
@@ -336,7 +337,7 @@ st.sidebar.markdown(f"👤 **{st.session_state.get('user_email', '')}**")
 if st.sidebar.button("🚪 Logout"):
     st.session_state["authenticated"] = False
     st.session_state["user_email"] = None
-    st.cache_data.clear()
+    st.cache_data.clear() # This one is fine because it's a full logout
     st.cache_resource.clear()
     st.rerun()
 
@@ -695,7 +696,7 @@ def add_issue_to_sheet(row_data):
     try:
         ws = ensure_issues_sheet()
         ws.append_row(row_data)
-        st.cache_data.clear()
+        load_issues.clear() # TARGETED CLEAR: Only clear the issues cache, protect the map cache
         return True
     except Exception as e:
         st.error(f"Failed to save issue: {e}")
@@ -722,7 +723,7 @@ def update_issue_in_sheet(issue_id, new_status, resolution_notes):
                 ws.update_cell(row_num, status_ci, new_status)
                 ws.update_cell(row_num, notes_ci, resolution_notes)
                 ws.update_cell(row_num, updated_ci, datetime.now().strftime("%d-%m-%Y %H:%M"))
-                st.cache_data.clear()
+                load_issues.clear() # TARGETED CLEAR: Only clear the issues cache, protect the map cache
                 return True
         return False
     except Exception as e:
@@ -1196,15 +1197,17 @@ def get_coordinates(area, city, state):
         return CITY_COORDS[a][0], CITY_COORDS[a][1], "Area (Instant)"
 
     # 2. Fast API Lookup for exact Area + City
-    geolocator = Nominatim(user_agent="huliot_site_analytics_v4")
     if a and c:
+        geolocator = Nominatim(user_agent="huliot_site_analytics_v4")
         try:
-            # Low timeout so we don't freeze the app if Nominatim struggles
-            loc = geolocator.geocode(f"{a}, {c}, India", timeout=1.5)
+            # We MUST sleep slightly before calling the API, otherwise Google/Nominatim 
+            # blocks the app for trying to load too many sites at once.
+            time.sleep(1.1) 
+            loc = geolocator.geocode(f"{a}, {c}, India", timeout=2.5)
             if loc:
                 return loc.latitude, loc.longitude, "API (Exact Area)"
         except:
-            pass
+            pass # Fails gracefully so the whole app doesn't crash
 
     # 3. Fallback to City in Dictionary (instant)
     if c and c in CITY_COORDS:
@@ -1261,7 +1264,9 @@ visits_df, master_df = load_data()
 
 with st.sidebar:
     if st.button("🔄 Refresh Data"):
-        st.cache_data.clear()
+        # TARGETED CLEAR: We only wipe the sheet data, NEVER the map geocoding cache
+        load_data.clear()
+        load_issues.clear()
         st.rerun()
     st.caption(f"🕐 Auto-refreshes every 2 min\nLast load: {datetime.now().strftime('%H:%M:%S')}")
     st.markdown("---")
@@ -1963,7 +1968,7 @@ with tab_issues:
     st.markdown("Raise, assign, and track site issues from Open → Resolved.")
 
     if st.button("🔄 Refresh Issues", key="refresh_issues"):
-        st.cache_data.clear()
+        load_issues.clear() # TARGETED CLEAR: Only clear the issues cache, protect the map cache
         st.rerun()
 
     issues_df = load_issues()
