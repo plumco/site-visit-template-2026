@@ -7,6 +7,7 @@ import requests
 import json
 import io
 import time
+import random
 import urllib.parse
 import folium
 from folium.plugins import Fullscreen, MarkerCluster
@@ -337,7 +338,7 @@ st.sidebar.markdown(f"👤 **{st.session_state.get('user_email', '')}**")
 if st.sidebar.button("🚪 Logout"):
     st.session_state["authenticated"] = False
     st.session_state["user_email"] = None
-    st.cache_data.clear() # This one is fine because it's a full logout
+    st.cache_data.clear()
     st.cache_resource.clear()
     st.rerun()
 
@@ -2331,6 +2332,11 @@ with tab_map:
                     if lat is None:
                         unmatched.append(proj_name)
                         continue
+                        
+                    # ADD A TINY RANDOM JITTER SO PINS IN THE EXACT SAME AREA DON'T PERFECTLY OVERLAP
+                    if level != "Exact from Sheet":
+                        lat += random.uniform(-0.003, 0.003)
+                        lon += random.uniform(-0.003, 0.003)
     
                     map_rows.append({
                         "Project": proj_name,
