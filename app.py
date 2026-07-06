@@ -1180,44 +1180,64 @@ STATE_COORDS = {
     "uttarakhand": (30.0668, 79.0193), "himachal pradesh": (31.1048, 77.1734),
 }
 
+
 @st.cache_data(show_spinner=False)
 def geocode_site(project, area, city, state):
     """
-    Uses the instant dictionary first to prevent API timeouts.
-    If the city isn't known, it makes ONE careful attempt with the API.
+    Prioritizes exact location mapping using Area and Project details.
+    Falls back to generic City/State dictionary only if the exact match fails.
     """
     a = str(area).strip().lower()
     c = str(city).strip().lower()
     s = str(state).strip().lower()
 
-    # 1. Fast Dictionary Lookup (Instant, prevents freezing)
+    # 1. Fast Area Dictionary Lookup (if area is already manually mapped)
     if a and a in CITY_COORDS:
         return CITY_COORDS[a][0], CITY_COORDS[a][1], "Area (Instant)"
+
+    # 2. API Lookup for EXACT Area/Project (This gives you the precise pin)
+    geolocator = Nominatim(user_agent="huliot_site_analytics_app_v3")
+    queries = []
+    
+    # Hierarchical search: Most specific to less specific
+    if project and area and city: 
+        queries.append(f"{project}, {area}, {city}, {state}, India")
+    if area and city and state: 
+        queries.append(f"{area}, {city}, {state}, India")
+    if area and city: 
+        queries.append(f"{area}, {city}, India")
+
+    # Try to find the exact area via API first
+    for query in queries:
+        try:
+            # Slightly increased timeout to give the API time to find precise locations
+            location = geolocator.geocode(query, timeout=3)
+            if location:
+                return location.latitude, location.longitude, "API (Exact Area)"
+        except:
+            continue
+
+    # 3. Fallback to City Dictionary if exact Area API search fails
     if c and c in CITY_COORDS:
-        return CITY_COORDS[c][0], CITY_COORDS[c][1], "City (Instant)"
+        return CITY_COORDS[c][0], CITY_COORDS[c][1], "City (Fallback)"
     if c:
         for key, (lat, lon) in CITY_COORDS.items():
             if key in c or c in key:
-                return lat, lon, "City (Instant)"
-    if s and s in STATE_COORDS:
-        return STATE_COORDS[s][0], STATE_COORDS[s][1], "State (Instant)"
+                return lat, lon, "City (Fallback)"
 
-    # 2. API Lookup (Slow - Only if completely missing from dict)
-    geolocator = Nominatim(user_agent="huliot_site_analytics_app_v2")
-    queries = []
-    if project and area and city: queries.append(f"{project}, {area}, {city}, India")
-    if area and city: queries.append(f"{area}, {city}, {state}, India")
-    if city and state: queries.append(f"{city}, {state}, India")
-        
-    for query in queries:
+    # 4. Fallback to City API if not in dictionary
+    if c and s:
         try:
-            # Short timeout to ensure app doesn't hang forever
-            location = geolocator.geocode(query, timeout=2)
+            location = geolocator.geocode(f"{c}, {s}, India", timeout=3)
             if location:
-                return location.latitude, location.longitude, "API Found"
+                return location.latitude, location.longitude, "API (City)"
         except:
-            continue
-            
+            pass
+
+    # 5. Fallback to State Dictionary
+    if s and s in STATE_COORDS:
+        return STATE_COORDS[s][0], STATE_COORDS[s][1], "State (Fallback)"
+
     return None, None, "Not Found"
 
 
