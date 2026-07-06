@@ -338,7 +338,7 @@ st.sidebar.markdown(f"👤 **{st.session_state.get('user_email', '')}**")
 if st.sidebar.button("🚪 Logout"):
     st.session_state["authenticated"] = False
     st.session_state["user_email"] = None
-    st.cache_data.clear()
+    st.cache_data.clear() 
     st.cache_resource.clear()
     st.rerun()
 
@@ -1197,9 +1197,10 @@ def get_coordinates(area, city, state):
     if a and a in CITY_COORDS:
         return CITY_COORDS[a][0], CITY_COORDS[a][1], "Area (Instant)"
 
+    geolocator = Nominatim(user_agent="huliot_site_analytics_v5")
+
     # 2. Fast API Lookup for exact Area + City
     if a and c:
-        geolocator = Nominatim(user_agent="huliot_site_analytics_v4")
         try:
             # We MUST sleep slightly before calling the API, otherwise Google/Nominatim 
             # blocks the app for trying to load too many sites at once.
@@ -1218,7 +1219,18 @@ def get_coordinates(area, city, state):
             if key in c or c in key:
                 return lat, lon, "City (Instant)"
 
-    # 4. Fallback to State in Dictionary (instant)
+    # 4. Fallback to City API (Ensures NO sites are left out if city isn't in dict)
+    if c:
+        try:
+            time.sleep(1.1)
+            query = f"{c}, {s}, India" if s else f"{c}, India"
+            loc = geolocator.geocode(query, timeout=2.5)
+            if loc:
+                return loc.latitude, loc.longitude, "API (City Fallback)"
+        except:
+            pass
+
+    # 5. Fallback to State in Dictionary (instant)
     if s and s in STATE_COORDS:
         return STATE_COORDS[s][0], STATE_COORDS[s][1], "State (Fallback)"
 
