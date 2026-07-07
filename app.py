@@ -6,6 +6,12 @@ import gspread
 import requests
 import json
 import io
+import time
+import random
+import urllib.parse
+import folium
+from folium.plugins import Fullscreen, MarkerCluster
+from streamlit_folium import st_folium
 from google.oauth2.service_account import Credentials
 from html import escape
 from datetime import datetime
@@ -19,11 +25,9 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.graphics.shapes import Drawing
 from reportlab.graphics.charts.barcharts import VerticalBarChart
+from geopy.geocoders import Nominatim
 
 # --- Liquid Glass chart template ---
-# NOTE: Plotly charts render inside an isolated iframe in Streamlit — transparent
-# backgrounds reveal the IFRAME's own default (pure black), not the page's gradient.
-# So we paint an explicit navy that matches the glass card tone instead.
 _glass_template = pio.templates["plotly_dark"]
 _glass_template.layout.paper_bgcolor = "#13243D"
 _glass_template.layout.plot_bgcolor = "#13243D"
@@ -47,7 +51,6 @@ st.markdown("""
         font-family: 'Inter', sans-serif;
     }
 
-    /* ===== Liquid Glass background — deep gradient mesh ===== */
     .stApp {
         background:
             radial-gradient(circle at 12% 18%, rgba(56,189,248,0.30) 0%, transparent 40%),
@@ -75,7 +78,6 @@ st.markdown("""
         color: #CBD5E1;
     }
 
-    /* ===== Sidebar — frosted glass panel ===== */
     section[data-testid="stSidebar"] {
         background: rgba(15, 23, 42, 0.55) !important;
         backdrop-filter: blur(24px) saturate(150%);
@@ -86,7 +88,6 @@ st.markdown("""
         color: #E2E8F0 !important;
     }
 
-    /* ===== KPI / Metric glass cards ===== */
     div[data-testid="stMetric"], div[data-testid="metric-container"] {
         background: linear-gradient(160deg, rgba(56,189,248,0.10), rgba(255,255,255,0.04)) !important;
         backdrop-filter: blur(20px) saturate(160%);
@@ -115,7 +116,6 @@ st.markdown("""
         font-weight: 600 !important;
     }
 
-    /* ===== Tabs — glass pill bar, each tab styled as its own button ===== */
     .stTabs [data-baseweb="tab-list"] {
         background: rgba(255,255,255,0.04);
         backdrop-filter: blur(16px);
@@ -146,7 +146,6 @@ st.markdown("""
         color: #7DD3FC !important;
         box-shadow: 0 0 16px rgba(56,189,248,0.15);
     }
-    /* Remove Streamlit's default underline indicator — pill background already shows active state */
     .stTabs [data-baseweb="tab-highlight"],
     .stTabs [data-baseweb="tab-border"] {
         display: none !important;
@@ -154,7 +153,6 @@ st.markdown("""
         background: transparent !important;
     }
 
-    /* ===== Buttons — glass with accent glow ===== */
     .stButton button, .stDownloadButton button, .stFormSubmitButton button,
     button[kind="secondary"], button[kind="primary"],
     button[data-testid="baseButton-secondary"], button[data-testid="baseButton-primary"],
@@ -181,7 +179,6 @@ st.markdown("""
         color: inherit !important;
     }
 
-    /* ===== Expanders ===== */
     div[data-testid="stExpander"] {
         background: rgba(255,255,255,0.04) !important;
         backdrop-filter: blur(16px);
@@ -190,7 +187,6 @@ st.markdown("""
         border-radius: 14px !important;
     }
 
-    /* ===== Inputs / Selectboxes / Date pickers ===== */
     div[data-baseweb="select"] > div,
     .stTextInput input, .stTextArea textarea, .stDateInput input {
         background: rgba(255,255,255,0.05) !important;
@@ -199,14 +195,12 @@ st.markdown("""
         color: #F1F5F9 !important;
     }
 
-    /* ===== DataFrame wrapper ===== */
     div[data-testid="stDataFrame"] {
         border-radius: 14px;
         overflow: hidden;
         border: 1px solid rgba(56,189,248,0.15);
     }
 
-    /* ===== Scrollbars — glass cyan style (Chrome/Edge/Safari + Firefox) ===== */
     div[data-testid="stDataFrame"] *, .stApp {
         scrollbar-width: thin;
         scrollbar-color: rgba(56,189,248,0.45) rgba(255,255,255,0.05);
@@ -232,7 +226,6 @@ st.markdown("""
         background: transparent;
     }
 
-    /* ===== Bordered containers (chart/table glass panels) ===== */
     div[data-testid="stVerticalBlockBorderWrapper"] {
         background: rgba(255,255,255,0.05) !important;
         backdrop-filter: blur(18px) saturate(150%);
@@ -243,7 +236,6 @@ st.markdown("""
         box-shadow: 0 6px 24px rgba(0,0,0,0.3);
     }
 
-    /* ===== Highlight cards — glass variant ===== */
     .highlight-card {
         padding: 22px;
         border-radius: 16px;
@@ -346,13 +338,12 @@ st.sidebar.markdown(f"👤 **{st.session_state.get('user_email', '')}**")
 if st.sidebar.button("🚪 Logout"):
     st.session_state["authenticated"] = False
     st.session_state["user_email"] = None
-    st.cache_data.clear()
+    st.cache_data.clear() 
     st.cache_resource.clear()
     st.rerun()
 
 st.sidebar.markdown("---")
 
-# --- 2. Google Sheets Connection ---
 @st.cache_resource
 def init_connection():
     scopes = [
@@ -369,7 +360,6 @@ client = init_connection()
 
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1J1K31wLOepJMO6DPHySUGR43GpV2sV7PqSHetO_EFjo/edit?gid=502709304#gid=502709304"
 
-# --- 3. Helper Functions ---
 def safe_text(value):
     value = str(value).strip()
     if value.lower() in ["nan", "none", "null", "nat", ""]:
@@ -707,7 +697,7 @@ def add_issue_to_sheet(row_data):
     try:
         ws = ensure_issues_sheet()
         ws.append_row(row_data)
-        st.cache_data.clear()
+        load_issues.clear() # TARGETED CLEAR: Only clear the issues cache, protect the map cache
         return True
     except Exception as e:
         st.error(f"Failed to save issue: {e}")
@@ -734,7 +724,7 @@ def update_issue_in_sheet(issue_id, new_status, resolution_notes):
                 ws.update_cell(row_num, status_ci, new_status)
                 ws.update_cell(row_num, notes_ci, resolution_notes)
                 ws.update_cell(row_num, updated_ci, datetime.now().strftime("%d-%m-%Y %H:%M"))
-                st.cache_data.clear()
+                load_issues.clear() # TARGETED CLEAR: Only clear the issues cache, protect the map cache
                 return True
         return False
     except Exception as e:
@@ -764,7 +754,6 @@ def build_executive_pdf(display_df, total_floors, total_sites, total_sent, total
     elements.append(Paragraph(f"Month: {selected_month}  |  Generated: {datetime.now().strftime('%d-%m-%Y %H:%M')}", sub_style))
     elements.append(Spacer(1, 14))
 
-    # --- KPI strip ---
     kpi_data = [
         ["Total Floor Visits", "Total Site Visits", "Total Reports Sent", "Total Pending Reports"],
         [str(total_floors), str(total_sites), str(total_sent), str(total_pending)]
@@ -788,7 +777,6 @@ def build_executive_pdf(display_df, total_floors, total_sites, total_sent, total
     elements.append(kpi_table)
     elements.append(Spacer(1, 16))
 
-    # --- Native bar chart: Reports Sent per Associate ---
     if not summary_df.empty:
         elements.append(Paragraph("Reports Sent to Client - by Associate", h_style))
         chart_data = summary_df.sort_values("Report sent to the client", ascending=False)
@@ -813,7 +801,6 @@ def build_executive_pdf(display_df, total_floors, total_sites, total_sent, total
         elements.append(drawing)
         elements.append(Spacer(1, 10))
 
-    # --- Detailed performance table ---
     elements.append(Paragraph("Detailed Performance Breakdown", h_style))
     table_cols = [c for c in [
         "Associate ID", "Floor Visit", "Site Tower visit", "Report Mark (YES)",
@@ -842,7 +829,6 @@ def build_executive_pdf(display_df, total_floors, total_sites, total_sent, total
     elements.append(perf_table)
     elements.append(Spacer(1, 16))
 
-    # --- Highlights ---
     elements.append(Paragraph("Highlights", h_style))
     highlight_data = [
         ["Highest Coverage", highest_coverage_str],
@@ -940,34 +926,6 @@ def build_scanned_issues_excel(result_df):
     return buffer.getvalue()
 
 
-
-    try:
-        spreadsheet = client.open_by_url(SHEET_URL)
-        ws = spreadsheet.worksheet(ISSUES_SHEET_NAME)
-        raw = ws.get_all_values()
-        if not raw:
-            return False
-        headers = raw[0]
-        try:
-            id_col_i   = headers.index("Issue ID")
-            status_ci  = headers.index("Status") + 1
-            notes_ci   = headers.index("Resolution Notes") + 1
-            updated_ci = headers.index("Updated At") + 1
-        except ValueError:
-            return False
-        for row_num, row in enumerate(raw[1:], start=2):
-            if len(row) > id_col_i and row[id_col_i] == issue_id:
-                ws.update_cell(row_num, status_ci, new_status)
-                ws.update_cell(row_num, notes_ci, resolution_notes)
-                ws.update_cell(row_num, updated_ci, datetime.now().strftime("%d-%m-%Y %H:%M"))
-                st.cache_data.clear()
-                return True
-        return False
-    except Exception as e:
-        st.error(f"Failed to update issue: {e}")
-        return False
-
-
 def build_issues_excel(issues_df):
     """
     Builds a color-coded Excel report of issues.
@@ -984,7 +942,6 @@ def build_issues_excel(issues_df):
         "Resolution Notes", "Created At", "Updated At"
     ] if c in issues_df.columns]
 
-    # --- Header row ---
     header_fill = PatternFill(start_color="111827", end_color="111827", fill_type="solid")
     header_font = Font(color="FFFFFF", bold=True, size=11)
     thin_border = Border(
@@ -999,12 +956,11 @@ def build_issues_excel(issues_df):
         cell.alignment = Alignment(horizontal="left", vertical="center")
         cell.border = thin_border
 
-    # --- Status color map ---
     status_fill_map = {
-        "Open":        PatternFill(start_color="FEE2E2", end_color="FEE2E2", fill_type="solid"),  # red
-        "In Progress": PatternFill(start_color="FEF3C7", end_color="FEF3C7", fill_type="solid"),  # yellow
-        "Resolved":    PatternFill(start_color="DCFCE7", end_color="DCFCE7", fill_type="solid"),  # green
-        "Closed":      PatternFill(start_color="E5E7EB", end_color="E5E7EB", fill_type="solid"),  # grey
+        "Open":        PatternFill(start_color="FEE2E2", end_color="FEE2E2", fill_type="solid"),
+        "In Progress": PatternFill(start_color="FEF3C7", end_color="FEF3C7", fill_type="solid"),
+        "Resolved":    PatternFill(start_color="DCFCE7", end_color="DCFCE7", fill_type="solid"),
+        "Closed":      PatternFill(start_color="E5E7EB", end_color="E5E7EB", fill_type="solid"),
     }
     status_font_map = {
         "Open":        Font(color="B91C1C", bold=True),
@@ -1013,7 +969,6 @@ def build_issues_excel(issues_df):
         "Closed":      Font(color="374151", bold=True),
     }
 
-    # --- Data rows ---
     for ri, (_, row) in enumerate(issues_df[cols].astype(str).iterrows(), start=2):
         status_val = row.get("Status", "").strip()
         row_fill = status_fill_map.get(status_val, None)
@@ -1028,7 +983,6 @@ def build_issues_excel(issues_df):
             if col_name == "Status" and status_val in status_font_map:
                 cell.font = status_font_map[status_val]
 
-    # --- Column widths ---
     width_map = {
         "Issue ID": 10, "Site Name": 22, "Issue Type": 20, "Severity": 10,
         "Description": 40, "Status": 14, "Raised By": 16, "Raised Date": 12,
@@ -1041,7 +995,6 @@ def build_issues_excel(issues_df):
     ws.freeze_panes = "A2"
     ws.row_dimensions[1].height = 22
 
-    # --- Summary sheet ---
     ws2 = wb.create_sheet("Summary")
     ws2.cell(row=1, column=1, value="Status").font = Font(bold=True)
     ws2.cell(row=1, column=2, value="Count").font = Font(bold=True)
@@ -1082,7 +1035,6 @@ def analyze_comments_for_issues(comment_records):
     if not api_key:
         raise ValueError("gemini_api_key not found in Streamlit secrets.")
 
-    # Filter out empty comments
     valid = [r for r in comment_records if str(r.get("comment", "")).strip() not in ["", "-", "nan", "None"]]
     if not valid:
         return []
@@ -1146,7 +1098,6 @@ Rules:
             "Try scanning fewer comments — filter by Month or Associate first, then scan."
         )
 
-    # Strip markdown fences if model added them
     if raw_text.startswith("```"):
         raw_text = raw_text.split("```")[1]
         if raw_text.startswith("json"):
@@ -1154,6 +1105,136 @@ Rules:
     raw_text = raw_text.strip()
 
     return json.loads(raw_text)
+
+
+# ==========================================
+# SITE MAP — INSTANT DICTIONARY HYBRID GEOCODING
+# ==========================================
+
+# A fast dictionary of common Maharashtra/West Zone cities and areas
+CITY_COORDS = {
+    "mumbai": (19.0760, 72.8777), "pune": (18.5204, 73.8567),
+    "baner": (18.5590, 73.7868), "hinjewadi": (18.5913, 73.7389), "wakad": (18.5987, 73.7688),
+    "kharadi": (18.5515, 73.9348), "viman nagar": (18.5679, 73.9143), "hadapsar": (18.5089, 73.9259),
+    "kothrud": (18.5074, 73.8077), "pimpri": (18.6298, 73.7997), "chinchwad": (18.6270, 73.7828),
+    "nagpur": (21.1458, 79.0882), "nashik": (19.9975, 73.7898),
+    "thane": (19.2183, 72.9781), "aurangabad": (19.8762, 75.3433),
+    "chhatrapati sambhajinagar": (19.8762, 75.3433),
+    "solapur": (17.6599, 75.9064), "kolhapur": (16.7050, 74.2433),
+    "amravati": (20.9320, 77.7523), "navi mumbai": (19.0330, 73.0297),
+    "vasai": (19.4912, 72.8054), "virar": (19.4559, 72.8112),
+    "kalyan": (19.2403, 73.1305), "dombivli": (19.2183, 73.0864),
+    "panvel": (18.9894, 73.1175), "ahmednagar": (19.0948, 74.7480),
+    "jalgaon": (21.0077, 75.5626), "akola": (20.7002, 77.0082),
+    "latur": (18.4088, 76.5604), "dhule": (20.9042, 74.7749),
+    "ratnagiri": (16.9902, 73.3120), "satara": (17.6805, 74.0183),
+    "sangli": (16.8524, 74.5815), "wardha": (20.7453, 78.6022),
+    "chandrapur": (19.9615, 79.2961), "ichalkaranji": (16.6920, 74.4605),
+    "panchavati": (19.9975, 73.7898),
+    "ahmedabad": (23.0225, 72.5714), "surat": (21.1702, 72.8311),
+    "vadodara": (22.3072, 73.1812), "baroda": (22.3072, 73.1812),
+    "rajkot": (22.3039, 70.8022), "bhavnagar": (21.7645, 72.1519),
+    "jamnagar": (22.4707, 70.0577), "junagadh": (21.5222, 70.4579),
+    "gandhinagar": (23.2156, 72.6369), "anand": (22.5645, 72.9289),
+    "navsari": (20.9467, 72.9520), "morbi": (22.8173, 70.8378),
+    "nadiad": (22.6939, 72.8615), "surendranagar": (22.7196, 71.6369),
+    "bharuch": (21.7051, 72.9959), "mehsana": (23.5880, 72.3693),
+    "vapi": (20.3893, 72.9106), "valsad": (20.5992, 72.9342),
+    "porbandar": (21.6417, 69.6293),
+    "indore": (22.7196, 75.8577), "bhopal": (23.2599, 77.4126),
+    "jabalpur": (23.1815, 79.9864), "gwalior": (26.2183, 78.1828),
+    "ujjain": (23.1765, 75.7885), "sagar": (23.8388, 78.7378),
+    "dewas": (22.9676, 76.0534), "satna": (24.5854, 80.8322),
+    "ratlam": (23.3315, 75.0367), "rewa": (24.5362, 81.2961),
+    "katni": (23.8339, 80.3933), "singrauli": (24.1992, 82.6753),
+    "burhanpur": (21.3009, 76.2291), "khandwa": (21.8245, 76.3529),
+    "bhind": (26.5644, 78.7873), "chhindwara": (22.0574, 78.9382),
+    "guna": (24.6466, 77.3119), "shivpuri": (25.4231, 77.6588),
+    "vidisha": (23.5251, 77.8081), "damoh": (23.8316, 79.4422),
+    "raipur": (21.2514, 81.6296), "bhilai": (21.2090, 81.4285),
+    "bilaspur": (22.0797, 82.1391), "korba": (22.3595, 82.7501),
+    "durg": (21.1904, 81.2849), "rajnandgaon": (21.0974, 81.0388),
+    "jagdalpur": (19.0822, 82.0322), "raigarh": (21.8974, 83.3950),
+    "ambikapur": (23.1193, 83.1957), "mahasamund": (21.1100, 82.0986),
+    "delhi": (28.7041, 77.1025), "new delhi": (28.6139, 77.2090),
+    "bengaluru": (12.9716, 77.5946), "bangalore": (12.9716, 77.5946),
+    "hyderabad": (17.3850, 78.4867), "chennai": (13.0827, 80.2707),
+    "kolkata": (22.5726, 88.3639), "jaipur": (26.9124, 75.7873),
+    "lucknow": (26.8467, 80.9462), "chandigarh": (30.7333, 76.7794),
+    "patna": (25.5941, 85.1376), "ranchi": (23.3441, 85.3096),
+    "bhubaneswar": (20.2961, 85.8245), "guwahati": (26.1445, 91.7362),
+    "thiruvananthapuram": (8.5241, 76.9366), "panaji": (15.4909, 73.8278),
+    "dehradun": (30.3165, 78.0322), "shimla": (31.1048, 77.1734),
+    "amaravati": (16.5062, 80.6480),
+}
+
+STATE_COORDS = {
+    "maharashtra": (19.7515, 75.7139), "gujarat": (22.2587, 71.1924),
+    "madhya pradesh": (22.9734, 78.6569), "chhattisgarh": (21.2787, 81.8661),
+    "rajasthan": (27.0238, 74.2179), "karnataka": (15.3173, 75.7139),
+    "tamil nadu": (11.1271, 78.6569), "telangana": (18.1124, 79.0193),
+    "andhra pradesh": (15.9129, 79.7400), "uttar pradesh": (26.8467, 80.9462),
+    "delhi": (28.7041, 77.1025), "punjab": (31.1471, 75.3412),
+    "haryana": (29.0588, 76.0856), "west bengal": (22.9868, 87.8550),
+    "bihar": (25.0961, 85.3131), "kerala": (10.8505, 76.2711),
+    "odisha": (20.9517, 85.0985), "jharkhand": (23.6102, 85.2799),
+    "assam": (26.2006, 92.9376), "goa": (15.2993, 74.1240),
+    "uttarakhand": (30.0668, 79.0193), "himachal pradesh": (31.1048, 77.1734),
+}
+
+
+@st.cache_data(show_spinner=False)
+def get_coordinates(area, city, state):
+    """
+    Looks up coordinates based ONLY on the Area and City, never the Project name.
+    This allows Streamlit to cache the API request for multiple projects in the same area.
+    """
+    a = str(area).strip().lower()
+    c = str(city).strip().lower()
+    s = str(state).strip().lower()
+
+    # 1. Fast Dictionary Lookup for Area (instant)
+    if a and a in CITY_COORDS:
+        return CITY_COORDS[a][0], CITY_COORDS[a][1], "Area (Instant)"
+
+    geolocator = Nominatim(user_agent="huliot_site_analytics_v5")
+
+    # 2. Fast API Lookup for exact Area + City
+    if a and c:
+        try:
+            # We MUST sleep slightly before calling the API, otherwise Google/Nominatim 
+            # blocks the app for trying to load too many sites at once.
+            time.sleep(1.1) 
+            loc = geolocator.geocode(f"{a}, {c}, India", timeout=2.5)
+            if loc:
+                return loc.latitude, loc.longitude, "API (Exact Area)"
+        except:
+            pass # Fails gracefully so the whole app doesn't crash
+
+    # 3. Fallback to City in Dictionary (instant)
+    if c and c in CITY_COORDS:
+        return CITY_COORDS[c][0], CITY_COORDS[c][1], "City (Instant)"
+    if c:
+        for key, (lat, lon) in CITY_COORDS.items():
+            if key in c or c in key:
+                return lat, lon, "City (Instant)"
+
+    # 4. Fallback to City API (Ensures NO sites are left out if city isn't in dict)
+    if c:
+        try:
+            time.sleep(1.1)
+            query = f"{c}, {s}, India" if s else f"{c}, India"
+            loc = geolocator.geocode(query, timeout=2.5)
+            if loc:
+                return loc.latitude, loc.longitude, "API (City Fallback)"
+        except:
+            pass
+
+    # 5. Fallback to State in Dictionary (instant)
+    if s and s in STATE_COORDS:
+        return STATE_COORDS[s][0], STATE_COORDS[s][1], "State (Fallback)"
+
+    return None, None, "Not Found"
 
 
 # --- 4. Load Data ---
@@ -1192,15 +1273,13 @@ def load_data():
     master_df = clean_df(master_df)
     return visits_df, master_df
 
-# ── Always call load_data() directly — @st.cache_data(ttl) handles performance.
-# Removing the old "data_loaded" session state guard which froze data for the
-# entire session and broke real-time chart/KPI updates. ──
 visits_df, master_df = load_data()
 
-# ── Sidebar: Refresh button + last-updated timestamp ──
 with st.sidebar:
     if st.button("🔄 Refresh Data"):
-        st.cache_data.clear()
+        # TARGETED CLEAR: We only wipe the sheet data, NEVER the map geocoding cache
+        load_data.clear()
+        load_issues.clear()
         st.rerun()
     st.caption(f"🕐 Auto-refreshes every 2 min\nLast load: {datetime.now().strftime('%H:%M:%S')}")
     st.markdown("---")
@@ -1230,12 +1309,13 @@ if not visits_df.empty:
 st.title("📊 Site Visit Deep Analytics")
 st.markdown("Live data synchronized directly from your Google Sheets.")
 
-tab_visits, tab_master, tab_exec, tab_site_card, tab_issues = st.tabs([
+tab_visits, tab_master, tab_exec, tab_site_card, tab_issues, tab_map = st.tabs([
     "📊 Visit Analytics",
     "📈 Master Projects",
     "👔 Executive Dashboard",
     "🏢 Site Report Card",
-    "🚨 Site Issues"
+    "🚨 Site Issues",
+    "🗺️ Site Map"
 ])
 
 # ==========================================
@@ -1317,7 +1397,6 @@ with tab_visits:
                 display_cols.append(c)
         st.dataframe(filtered_v[display_cols].astype(str), use_container_width=True, hide_index=True)
 
-        # ── AI Comment Analyzer ──
         st.markdown("---")
         st.markdown("#### 🤖 AI Comment Analyzer — Extract Issues from Visit Comments")
         st.caption("Scans the filtered visit comments above using Claude AI and detects potential site issues.")
@@ -1330,7 +1409,6 @@ with tab_visits:
         if not comment_col_t1:
             st.warning("No Comment column found in visit records.")
         else:
-            # Build comment records for analysis
             has_comments = filtered_v[
                 filtered_v[comment_col_t1].astype(str).str.strip().isin(
                     ["", "-", "nan", "None"]
@@ -1380,13 +1458,11 @@ with tab_visits:
                         st.error(f"Analysis failed: {ex}")
                         st.session_state["analyzed_issues"] = []
 
-            # ── Show results ──
             analyzed = st.session_state.get("analyzed_issues", [])
             if analyzed:
                 st.success(f"🔎 Claude detected **{len(analyzed)} issues** in visit comments. Review and select which to add.")
 
                 result_df = pd.DataFrame(analyzed)
-                # Ensure expected columns exist
                 for col_name in ["site_name", "issue_type", "severity", "description", "raised_by", "raised_date"]:
                     if col_name not in result_df.columns:
                         result_df[col_name] = ""
@@ -1411,7 +1487,6 @@ with tab_visits:
                 selected_rows = edited_df[edited_df["Add?"] == True]
                 n_selected = len(selected_rows)
 
-                # ── Excel download for scanned results (send to team) ──
                 dlx1, dlx2 = st.columns([1, 3])
                 with dlx1:
                     scan_excel_bytes = build_scanned_issues_excel(edited_df.drop(columns=["Add?"]))
@@ -1431,7 +1506,6 @@ with tab_visits:
                         key="btn_add_analyzed",
                         type="primary"
                     ):
-                        # Get current max issue number
                         fresh_issues = load_issues()
                         existing_nums = []
                         if not fresh_issues.empty and "Issue ID" in fresh_issues.columns:
@@ -1454,12 +1528,12 @@ with tab_visits:
                                     str(irow.get("description", "")).strip(),
                                     str(irow.get("raised_by", st.session_state.get("user_email", ""))).strip(),
                                     str(irow.get("raised_date", datetime.now().strftime("%d-%m-%Y"))).strip(),
-                                    "",   # Assigned To
-                                    "",   # Target Date
+                                    "",
+                                    "",
                                     "Open",
-                                    "",   # Resolution Notes
+                                    "",
                                     datetime.now().strftime("%d-%m-%Y %H:%M"),
-                                    ""    # Updated At
+                                    ""
                                 ]
                                 ok = add_issue_to_sheet(row_data)
                                 if ok:
@@ -1745,7 +1819,6 @@ with tab_site_card:
         if not all_sites:
             st.warning("No site names found.")
         else:
-            # ── Step 1: Site selector + column toggle ──
             sc1, sc2 = st.columns([3, 1])
             with sc1:
                 selected_site = st.selectbox("Select Site Name", all_sites, key="site_card_selected_site")
@@ -1754,12 +1827,10 @@ with tab_site_card:
                 st.write("")
                 show_all_columns = st.checkbox("Show all columns", value=True, key="site_card_show_all")
 
-            # ── Step 2: Get all visits for this site ──
             site_master = filter_site(master_df, master_site_col, selected_site) if master_site_col else pd.DataFrame()
             site_visits = filter_site(visits_df, visit_site_col, selected_site) if visit_site_col else pd.DataFrame()
             master_row  = site_master.iloc[0] if not site_master.empty else pd.Series(dtype="object")
 
-            # Column references
             col_project       = master_site_col
             col_state         = safe_col(master_df, ["STATE", "State"])
             col_dist          = safe_col(master_df, ["DISTRICT / CITY", "DISTRICT", "District", "CITY", "City"])
@@ -1775,7 +1846,6 @@ with tab_site_card:
             tower_col_site    = safe_col(site_visits, ["Tower Name", "Tower", "Building"])
             floor_col_site    = safe_col(site_visits, ["FloorsVisited", "Floors Visited", "Floor Visited", "Floor"])
 
-            # ── Step 3: Filters FIRST — before KPI computation ──
             if not site_visits.empty:
                 st.markdown("#### 🔽 Filter View")
                 f1, f2, f3, f4 = st.columns(4)
@@ -1792,7 +1862,6 @@ with tab_site_card:
                     site_statuses = ["All"] + clean_options(site_visits["Status"]) if "Status" in site_visits.columns else ["All"]
                     sf_status = st.selectbox("Status", site_statuses, key="site_card_status")
 
-                # ── Step 4: Apply filters ──
                 site_visit_filtered = site_visits.copy()
                 if sf_month  != "All" and "Month"  in site_visit_filtered.columns:
                     site_visit_filtered = site_visit_filtered[site_visit_filtered["Month"]  == sf_month]
@@ -1806,7 +1875,6 @@ with tab_site_card:
                 sf_month = sf_tower = sf_assoc = sf_status = "All"
                 site_visit_filtered = site_visits.copy()
 
-            # ── Step 5: Compute KPIs from FILTERED data ──
             total_visit_records = len(site_visit_filtered)
             total_floor_visits  = int(site_visit_filtered["Num_Floors"].sum()) if not site_visit_filtered.empty and "Num_Floors" in site_visit_filtered.columns else 0
             submitted_reports   = len(site_visit_filtered[site_visit_filtered["Status"] == "Submitted"]) if not site_visit_filtered.empty and "Status" in site_visit_filtered.columns else 0
@@ -1814,7 +1882,6 @@ with tab_site_card:
             technical_na        = len(site_visit_filtered[site_visit_filtered["Status"] == "Technical (NA)"]) if not site_visit_filtered.empty and "Status" in site_visit_filtered.columns else 0
             total_towers        = site_visit_filtered[tower_col_site].nunique() if tower_col_site and not site_visit_filtered.empty else 0
 
-            # ── Step 6: Last visit from FILTERED data ──
             last_visit_date = last_visit_by = last_visit_comment = "-"
             if not site_visit_filtered.empty:
                 sorted_visits = site_visit_filtered.sort_values("Date Parsed", ascending=False) if "Date Parsed" in site_visit_filtered.columns else site_visit_filtered.copy()
@@ -1823,7 +1890,6 @@ with tab_site_card:
                 if assoc_col_site:   last_visit_by      = last_row.get(assoc_col_site, "-")
                 if comment_col_site: last_visit_comment = last_row.get(comment_col_site, "-")
 
-            # ── Build filter label for card badge ──
             filter_parts = []
             if sf_month  != "All": filter_parts.append(sf_month)
             if sf_tower  != "All": filter_parts.append(sf_tower)
@@ -1846,7 +1912,6 @@ with tab_site_card:
                 "Filter Applied": filter_label
             }])
 
-            # ── Step 7: Render card (always reflects current filter) ──
             site_card_html = create_site_card_html(
                 selected_site, master_row_for_report, master_cols_1, master_cols_2,
                 total_visit_records, total_floor_visits, submitted_reports, pending_reports,
@@ -1855,7 +1920,6 @@ with tab_site_card:
             )
             components.html(site_card_html, height=640, scrolling=True)
 
-            # ── Step 8: Charts + table + downloads from filtered data ──
             st.markdown("### 📋 VisitLog Data")
             if site_visit_filtered.empty:
                 st.info(f"No records match the selected filters: **{filter_label}**")
@@ -1916,14 +1980,12 @@ with tab_issues:
     st.markdown("### 🚨 Site Issue Tracker")
     st.markdown("Raise, assign, and track site issues from Open → Resolved.")
 
-    # ── Refresh button ──
     if st.button("🔄 Refresh Issues", key="refresh_issues"):
-        st.cache_data.clear()
+        load_issues.clear() # TARGETED CLEAR: Only clear the issues cache, protect the map cache
         st.rerun()
 
     issues_df = load_issues()
 
-    # ── KPI strip ──
     def _count_status(df, status):
         if df.empty or "Status" not in df.columns:
             return 0
@@ -1949,7 +2011,6 @@ with tab_issues:
         "📊 Issue Analytics"
     ])
 
-    # ── Site list for dropdowns ──
     _ms_col = find_master_site_col(master_df)
     _vs_col = find_visit_site_col(visits_df)
     all_sites_issues = []
@@ -1957,13 +2018,9 @@ with tab_issues:
     if _vs_col and not visits_df.empty: all_sites_issues += clean_options(visits_df[_vs_col])
     all_sites_issues = sorted(list(set([x for x in all_sites_issues if str(x).strip()])))
 
-    # ── Associate list ──
     _assoc_col = safe_col(visits_df, ["Associate ID", "Associate", "Technical Person"])
     associate_list = clean_options(visits_df[_assoc_col]) if _assoc_col and not visits_df.empty else []
 
-    # ==========================================================
-    # SUBTAB: ISSUE LOG
-    # ==========================================================
     with subtab_log:
         if issues_df.empty:
             st.info("No issues raised yet. Use 'Raise New Issue' tab to add the first one.")
@@ -1990,7 +2047,6 @@ with tab_issues:
             if f_issue_type   != "All" and "Issue Type"  in filtered_issues.columns:
                 filtered_issues = filtered_issues[filtered_issues["Issue Type"]  == f_issue_type]
 
-            # Display cols order
             log_cols = [c for c in [
                 "Issue ID", "Site Name", "Issue Type", "Severity", "Description",
                 "Status", "Raised By", "Raised Date", "Assigned To", "Target Date",
@@ -2000,7 +2056,6 @@ with tab_issues:
             st.dataframe(filtered_issues[log_cols].astype(str), use_container_width=True, hide_index=True)
             st.markdown(f"*Showing {len(filtered_issues)} of {len(issues_df)} total issues*")
 
-            # ── Excel Download — color coded by status ──
             dl1, dl2 = st.columns([1, 3])
             with dl1:
                 excel_bytes = build_issues_excel(filtered_issues)
@@ -2016,7 +2071,6 @@ with tab_issues:
 
             st.markdown("---")
 
-            # ── Update Issue Status ──
             with st.expander("✏️ Update Issue Status", expanded=False):
                 if "Issue ID" not in issues_df.columns:
                     st.info("No issues to update.")
@@ -2031,7 +2085,6 @@ with tab_issues:
                         u1, u2 = st.columns(2)
                         with u1:
                             sel_issue_id = st.selectbox("Select Issue ID", updatable, key="update_issue_id")
-                            # Show current description for context
                             if sel_issue_id and not issues_df.empty:
                                 match = issues_df[issues_df["Issue ID"] == sel_issue_id]
                                 if not match.empty:
@@ -2057,9 +2110,6 @@ with tab_issues:
                                 else:
                                     st.error("Update failed. Check sheet access.")
 
-    # ==========================================================
-    # SUBTAB: RAISE NEW ISSUE
-    # ==========================================================
     with subtab_add:
         st.markdown("#### Raise a New Site Issue")
 
@@ -2132,9 +2182,6 @@ with tab_issues:
                     else:
                         st.error("Failed to save. Check Google Sheet access.")
 
-    # ==========================================================
-    # SUBTAB: ISSUE ANALYTICS
-    # ==========================================================
     with subtab_chart:
         if issues_df.empty:
             st.info("No issues data yet. Raise some issues first.")
@@ -2189,7 +2236,6 @@ with tab_issues:
                             color_discrete_sequence=px.colors.qualitative.Pastel)
                         st.plotly_chart(fig_t, use_container_width=True, key="chart_issue_type")
 
-            # ── Associate-wise open issues ──
             if "Assigned To" in issues_df.columns and "Status" in issues_df.columns:
                 open_assigned = issues_df[
                     issues_df["Status"].isin(["Open", "In Progress"]) &
@@ -2205,3 +2251,217 @@ with tab_issues:
                         fig_ac.update_traces(textposition="outside")
                         fig_ac.update_layout(yaxis=dict(autorange="reversed"), margin=dict(l=0, r=60, t=30, b=0))
                         st.plotly_chart(fig_ac, use_container_width=True, key="chart_issue_assignee")
+
+
+# ==========================================
+# TAB 6: SITE MAP (NOW USING FOLIUM FOR GOOGLE MAPS)
+# ==========================================
+with tab_map:
+    st.markdown("### 🗺️ Site Map (Google Maps View)")
+    st.markdown("Geographic view of every project in **MasterProject** — Filter easily by State ➔ City ➔ Area.")
+
+    if master_df.empty:
+        st.warning("No MasterProject data found.")
+    else:
+        map_site_col   = find_master_site_col(master_df)
+        map_state_col  = safe_col(master_df, ["STATE", "State"])
+        map_dist_col   = safe_col(master_df, ["DISTRICT / CITY", "DISTRICT", "District", "CITY", "City"])
+        map_area_col   = safe_col(master_df, ["Area", "AREA"])
+        map_status_col = safe_col(master_df, ["STATUS OF PROJECT", "Status", "STATUS"])
+        map_tech_col   = safe_col(master_df, ["Technical Person", "TECHNICAL PERSON NAME", "TECHNICAL PERSON"])
+        map_sales_col  = safe_col(master_df, ["Sells Person", "SALES PERSON NAME", "SALES PERSON", "Sales Person"])
+        map_ong_col    = safe_col(master_df, ["VISIT ONGOING", "Visit Ongoing"])
+
+        # Checking if user already added explicit Latitude / Longitude columns to their sheet
+        map_lat_col    = safe_col(master_df, ["Latitude", "Lat", "LATITUDE"])
+        map_lon_col    = safe_col(master_df, ["Longitude", "Lon", "Long", "LONGITUDE"])
+
+        if not map_site_col:
+            st.warning("Could not find a Project / Site Name column in MasterProject sheet.")
+        else:
+            # Cascading Hierarchical Filters
+            mf1, mf2, mf3, mf4 = st.columns(4)
+            
+            with mf1:
+                map_states = ["All"] + (clean_options(master_df[map_state_col]) if map_state_col else [])
+                f_map_state = st.selectbox("State", map_states, key="map_f_state")
+                
+            df_for_city = master_df if f_map_state == "All" else master_df[master_df[map_state_col].astype(str) == f_map_state]
+            
+            with mf2:
+                map_cities = ["All"] + (clean_options(df_for_city[map_dist_col]) if map_dist_col else [])
+                f_map_city = st.selectbox("City / District", map_cities, key="map_f_city")
+                
+            df_for_area = df_for_city if f_map_city == "All" else df_for_city[df_for_city[map_dist_col].astype(str) == f_map_city]
+            
+            with mf3:
+                map_areas = ["All"] + (clean_options(df_for_area[map_area_col]) if map_area_col else [])
+                f_map_area = st.selectbox("Area", map_areas, key="map_f_area")
+                
+            filtered_map_df = df_for_area if f_map_area == "All" else df_for_area[df_for_area[map_area_col].astype(str) == f_map_area]
+            
+            with mf4:
+                map_statuses = ["All"] + (clean_options(filtered_map_df[map_status_col]) if map_status_col else [])
+                f_map_status = st.selectbox("Project Status", map_statuses, key="map_f_status")
+                
+            if f_map_status != "All":
+                filtered_map_df = filtered_map_df[filtered_map_df[map_status_col].astype(str) == f_map_status]
+
+            map_rows = []
+            unmatched = []
+            
+            # Wrap the API lookups in a spinner so the UI doesn't appear frozen
+            with st.spinner("📍 Geocoding site locations... Please wait."):
+                for _, row in filtered_map_df.iterrows():
+                    proj_name = str(row.get(map_site_col, "")).strip()
+                    if not proj_name:
+                        continue
+                    state_val  = str(row.get(map_state_col, "")).strip() if map_state_col else ""
+                    dist_val   = str(row.get(map_dist_col, "")).strip() if map_dist_col else ""
+                    area_val   = str(row.get(map_area_col, "")).strip() if map_area_col else ""
+                    status_val = str(row.get(map_status_col, "")).strip() if map_status_col else "Unknown"
+                    tech_val   = str(row.get(map_tech_col, "")).strip() if map_tech_col else ""
+                    sales_val  = str(row.get(map_sales_col, "")).strip() if map_sales_col else ""
+                    ong_val    = str(row.get(map_ong_col, "")).strip() if map_ong_col else ""
+    
+                    lat = lon = None
+                    level = "Unknown"
+                    
+                    # 1. First check if the Google Sheet already has exact Lat/Lon columns provided by the user
+                    if map_lat_col and map_lon_col:
+                        try:
+                            lat = float(str(row.get(map_lat_col, "")).strip())
+                            lon = float(str(row.get(map_lon_col, "")).strip())
+                            level = "Exact from Sheet"
+                        except ValueError:
+                            pass
+                            
+                    # 2. Fast Hybrid Geocode (Dictionary first, API fallback)
+                    if lat is None or lon is None:
+                        # Notice we no longer pass proj_name here. It relies strictly on area/city caching
+                        lat, lon, level = get_coordinates(area_val, dist_val, state_val)
+    
+                    if lat is None:
+                        unmatched.append(proj_name)
+                        continue
+                        
+                    # ADD A TINY RANDOM JITTER SO PINS IN THE EXACT SAME AREA DON'T PERFECTLY OVERLAP
+                    if level != "Exact from Sheet":
+                        lat += random.uniform(-0.003, 0.003)
+                        lon += random.uniform(-0.003, 0.003)
+    
+                    map_rows.append({
+                        "Project": proj_name,
+                        "State": state_val or "-",
+                        "District/City": dist_val or "-",
+                        "Area": area_val or "-",
+                        "Status": status_val or "Unknown",
+                        "Technical Person": tech_val or "-",
+                        "Sales Person": sales_val or "-",
+                        "Ongoing": ong_val or "-",
+                        "lat": lat,
+                        "lon": lon,
+                        "Match Level": level,
+                    })
+
+            map_df = pd.DataFrame(map_rows)
+
+            mk1, mk2, mk3, mk4 = st.columns(4)
+            mk1.metric("Sites Plotted", len(map_df))
+            mk2.metric("States Covered", map_df["State"].nunique() if not map_df.empty else 0)
+            mk3.metric("Cities/Districts", map_df["District/City"].nunique() if not map_df.empty else 0)
+            mk4.metric("Unmatched (not plotted)", len(unmatched))
+
+            if unmatched:
+                with st.expander(f"⚠️ {len(unmatched)} project(s) could not be plotted — location completely unknown"):
+                    st.write(", ".join(unmatched[:50]) + (" ..." if len(unmatched) > 50 else ""))
+
+            st.markdown("---")
+
+            if map_df.empty:
+                st.info("No sites could be plotted with current filters/data.")
+            else:
+                # Determine map center dynamically
+                center_lat = map_df["lat"].mean()
+                center_lon = map_df["lon"].mean()
+                
+                # Zoom level based on filter depth
+                if f_map_area != "All":
+                    zoom_start = 12
+                elif f_map_city != "All":
+                    zoom_start = 10
+                elif f_map_state != "All":
+                    zoom_start = 6
+                else:
+                    zoom_start = 5
+
+                # Create Folium Map with Google Maps Tiles
+                m = folium.Map(
+                    location=[center_lat, center_lon],
+                    zoom_start=zoom_start,
+                    tiles="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}",
+                    attr="Google",
+                    control_scale=True # Adds scale bar at the bottom left
+                )
+
+                # Add Fullscreen Plugin
+                Fullscreen(
+                    position='topright',
+                    title='Expand Map',
+                    title_cancel='Exit Fullscreen',
+                    force_separate_button=True
+                ).add_to(m)
+
+                status_color_map = {
+                    "Completed": "green", "Complete": "green", "Done": "green",
+                    "Ongoing": "blue", "In Progress": "blue", "Active": "blue",
+                    "Pending": "orange", "On Hold": "orange", "Hold": "orange",
+                    "Cancelled": "red", "Canceled": "red", "Stopped": "red",
+                }
+
+                # Add Marker Clustering Plugin to prevent spider web overlaps
+                marker_cluster = MarkerCluster(name="Sites").add_to(m)
+
+                # Add Arrow Markers to the Cluster with dynamic Google Maps Search URL
+                for _, row in map_df.iterrows():
+                    marker_color = status_color_map.get(row['Status'], "gray")
+                    
+                    # Tell Google Maps to search for the specific project address instead of raw coordinates
+                    address_query = urllib.parse.quote(f"{row['Project']}, {row['Area']}, {row['District/City']}")
+                    directions_url = f"https://www.google.com/maps/dir/?api=1&destination={address_query}"
+                    
+                    popup_html = f"""
+                        <div style='font-family: Arial, sans-serif; min-width: 220px; font-size: 13px;'>
+                            <h4 style='margin-bottom: 5px; color: #1e3a8a;'>{escape(row['Project'])}</h4>
+                            <b>Area:</b> {escape(row['Area'])}<br>
+                            <b>City:</b> {escape(row['District/City'])}<br>
+                            <b>Status:</b> {escape(row['Status'])}<br>
+                            <b>Tech Person:</b> {escape(row['Technical Person'])}<br><br>
+                            <a href="{directions_url}" 
+                               target="_blank" 
+                               style="display: block; text-align: center; padding: 6px; background-color: #2563eb; color: white; text-decoration: none; border-radius: 6px; font-weight: bold;">
+                               📍 Get Directions
+                            </a>
+                        </div>
+                    """
+                    
+                    folium.Marker(
+                        location=[row['lat'], row['lon']],
+                        popup=folium.Popup(popup_html, max_width=300),
+                        tooltip=row['Project'],
+                        icon=folium.Icon(icon="location-arrow", prefix="fa", color=marker_color)
+                    ).add_to(marker_cluster)
+
+                # Display folium map in streamlit
+                with st.container(border=True):
+                    st_folium(m, width=1200, height=550, returned_objects=[])
+
+                st.caption(
+                    "🟦 Ongoing &nbsp;&nbsp; 🟩 Completed &nbsp;&nbsp; 🟧 Pending/Hold &nbsp;&nbsp; 🟥 Cancelled &nbsp;&nbsp; "
+                    "⬜ Unknown status. <br>Use the **Fullscreen button [ ]** in the top right. Scroll zoom is fully supported. Nearby markers are **clustered into groups** (click the numbers to reveal them). Click any marker to open GPS Directions."
+                )
+
+                st.markdown("---")
+                st.subheader("Plotted Sites — Detail Table")
+                table_cols_map = ["Project", "State", "District/City", "Area", "Status", "Technical Person", "Sales Person", "Ongoing", "Match Level"]
+                st.dataframe(map_df[table_cols_map], use_container_width=True, hide_index=True)
