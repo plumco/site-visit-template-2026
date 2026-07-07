@@ -2234,6 +2234,7 @@ with tab_issues:
                         fig_ac.update_layout(yaxis=dict(autorange="reversed"), margin=dict(l=0, r=60, t=30, b=0))
                         st.plotly_chart(fig_ac, use_container_width=True, key="chart_issue_assignee")
 
+
 # ==========================================
 # TAB 6: SITE MAP (NOW USING FOLIUM FOR GOOGLE MAPS)
 # ==========================================
@@ -2290,60 +2291,51 @@ with tab_map:
 
             map_rows = []
             unmatched = []
-            
-            # Wrap the API lookups in a spinner so the UI doesn't appear frozen
-            with st.spinner("📍 Geocoding site locations... Please wait."):
-                for _, row in filtered_map_df.iterrows():
-                    proj_name = str(row.get(map_site_col, "")).strip()
-                    if not proj_name:
-                        continue
-                    state_val  = str(row.get(map_state_col, "")).strip() if map_state_col else ""
-                    dist_val   = str(row.get(map_dist_col, "")).strip() if map_dist_col else ""
-                    area_val   = str(row.get(map_area_col, "")).strip() if map_area_col else ""
-                    status_val = str(row.get(map_status_col, "")).strip() if map_status_col else "Unknown"
-                    tech_val   = str(row.get(map_tech_col, "")).strip() if map_tech_col else ""
-                    sales_val  = str(row.get(map_sales_col, "")).strip() if map_sales_col else ""
-                    ong_val    = str(row.get(map_ong_col, "")).strip() if map_ong_col else ""
-    
-                    lat = lon = None
-                    level = "Unknown"
-                    
-                    # 1. First check if the Google Sheet already has exact Lat/Lon columns provided by the user
-                    if map_lat_col and map_lon_col:
-                        try:
-                            lat = float(str(row.get(map_lat_col, "")).strip())
-                            lon = float(str(row.get(map_lon_col, "")).strip())
-                            level = "Exact from Sheet"
-                        except ValueError:
-                            pass
-                            
-                    # 2. Fast Hybrid Geocode (Dictionary first, API fallback)
-                    if lat is None or lon is None:
-                        # Notice we no longer pass proj_name here. It relies strictly on area/city caching
-                        lat, lon, level = get_coordinates(area_val, dist_val, state_val)
-    
-                    if lat is None:
-                        unmatched.append(proj_name)
-                        continue
+            for _, row in filtered_map_df.iterrows():
+                proj_name = str(row.get(map_site_col, "")).strip()
+                if not proj_name:
+                    continue
+                state_val  = str(row.get(map_state_col, "")).strip() if map_state_col else ""
+                dist_val   = str(row.get(map_dist_col, "")).strip() if map_dist_col else ""
+                area_val   = str(row.get(map_area_col, "")).strip() if map_area_col else ""
+                status_val = str(row.get(map_status_col, "")).strip() if map_status_col else "Unknown"
+                tech_val   = str(row.get(map_tech_col, "")).strip() if map_tech_col else ""
+                sales_val  = str(row.get(map_sales_col, "")).strip() if map_sales_col else ""
+                ong_val    = str(row.get(map_ong_col, "")).strip() if map_ong_col else ""
+
+                lat = lon = None
+                level = "Unknown"
+                
+                # 1. First check if the Google Sheet already has exact Lat/Lon columns provided by the user
+                if map_lat_col and map_lon_col:
+                    try:
+                        lat = float(str(row.get(map_lat_col, "")).strip())
+                        lon = float(str(row.get(map_lon_col, "")).strip())
+                        level = "Exact from Sheet"
+                    except ValueError:
+                        pass
                         
-                    # ADD A TINY RANDOM JITTER SO PINS IN THE EXACT SAME AREA DON'T PERFECTLY OVERLAP
-                    if level != "Exact from Sheet":
-                        lat += random.uniform(-0.003, 0.003)
-                        lon += random.uniform(-0.003, 0.003)
-    
-                    map_rows.append({
-                        "Project": proj_name,
-                        "State": state_val or "-",
-                        "District/City": dist_val or "-",
-                        "Area": area_val or "-",
-                        "Status": status_val or "Unknown",
-                        "Technical Person": tech_val or "-",
-                        "Sales Person": sales_val or "-",
-                        "Ongoing": ong_val or "-",
-                        "lat": lat,
-                        "lon": lon,
-                        "Match Level": level,
-                    })
+                # 2. Fast Hybrid Geocode (Dictionary first, API fallback)
+                if lat is None or lon is None:
+                    lat, lon, level = geocode_site(proj_name, area_val, dist_val, state_val)
+
+                if lat is None:
+                    unmatched.append(proj_name)
+                    continue
+
+                map_rows.append({
+                    "Project": proj_name,
+                    "State": state_val or "-",
+                    "District/City": dist_val or "-",
+                    "Area": area_val or "-",
+                    "Status": status_val or "Unknown",
+                    "Technical Person": tech_val or "-",
+                    "Sales Person": sales_val or "-",
+                    "Ongoing": ong_val or "-",
+                    "lat": lat,
+                    "lon": lon,
+                    "Match Level": level,
+                })
 
             map_df = pd.DataFrame(map_rows)
 
