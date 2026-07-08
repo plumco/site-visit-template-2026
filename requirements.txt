@@ -8,7 +8,4 @@ PyYAML
 requests
 openpyxl
 reportlab
-folium
-streamlit-folium
-geopy
-reportlab
+
