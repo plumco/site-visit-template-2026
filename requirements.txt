@@ -10,3 +10,4 @@ openpyxl
 reportlab
 folium
 streamlit-folium
+geopy
