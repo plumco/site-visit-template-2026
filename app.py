@@ -6,8 +6,6 @@ import gspread
 import requests
 import json
 import io
-import time
-import random
 import urllib.parse
 import folium
 from folium.plugins import Fullscreen, MarkerCluster
@@ -338,7 +336,7 @@ st.sidebar.markdown(f"👤 **{st.session_state.get('user_email', '')}**")
 if st.sidebar.button("🚪 Logout"):
     st.session_state["authenticated"] = False
     st.session_state["user_email"] = None
-    st.cache_data.clear() 
+    st.cache_data.clear()
     st.cache_resource.clear()
     st.rerun()
 
@@ -697,7 +695,7 @@ def add_issue_to_sheet(row_data):
     try:
         ws = ensure_issues_sheet()
         ws.append_row(row_data)
-        load_issues.clear() # TARGETED CLEAR: Only clear the issues cache, protect the map cache
+        st.cache_data.clear()
         return True
     except Exception as e:
         st.error(f"Failed to save issue: {e}")
@@ -724,7 +722,7 @@ def update_issue_in_sheet(issue_id, new_status, resolution_notes):
                 ws.update_cell(row_num, status_ci, new_status)
                 ws.update_cell(row_num, notes_ci, resolution_notes)
                 ws.update_cell(row_num, updated_ci, datetime.now().strftime("%d-%m-%Y %H:%M"))
-                load_issues.clear() # TARGETED CLEAR: Only clear the issues cache, protect the map cache
+                st.cache_data.clear()
                 return True
         return False
     except Exception as e:
@@ -1182,58 +1180,44 @@ STATE_COORDS = {
     "uttarakhand": (30.0668, 79.0193), "himachal pradesh": (31.1048, 77.1734),
 }
 
-
 @st.cache_data(show_spinner=False)
-def get_coordinates(area, city, state):
+def geocode_site(project, area, city, state):
     """
-    Looks up coordinates based ONLY on the Area and City, never the Project name.
-    This allows Streamlit to cache the API request for multiple projects in the same area.
+    Uses the instant dictionary first to prevent API timeouts.
+    If the city isn't known, it makes ONE careful attempt with the API.
     """
     a = str(area).strip().lower()
     c = str(city).strip().lower()
     s = str(state).strip().lower()
 
-    # 1. Fast Dictionary Lookup for Area (instant)
+    # 1. Fast Dictionary Lookup (Instant, prevents freezing)
     if a and a in CITY_COORDS:
         return CITY_COORDS[a][0], CITY_COORDS[a][1], "Area (Instant)"
-
-    geolocator = Nominatim(user_agent="huliot_site_analytics_v5")
-
-    # 2. Fast API Lookup for exact Area + City
-    if a and c:
-        try:
-            # We MUST sleep slightly before calling the API, otherwise Google/Nominatim 
-            # blocks the app for trying to load too many sites at once.
-            time.sleep(1.1) 
-            loc = geolocator.geocode(f"{a}, {c}, India", timeout=2.5)
-            if loc:
-                return loc.latitude, loc.longitude, "API (Exact Area)"
-        except:
-            pass # Fails gracefully so the whole app doesn't crash
-
-    # 3. Fallback to City in Dictionary (instant)
     if c and c in CITY_COORDS:
         return CITY_COORDS[c][0], CITY_COORDS[c][1], "City (Instant)"
     if c:
         for key, (lat, lon) in CITY_COORDS.items():
             if key in c or c in key:
                 return lat, lon, "City (Instant)"
-
-    # 4. Fallback to City API (Ensures NO sites are left out if city isn't in dict)
-    if c:
-        try:
-            time.sleep(1.1)
-            query = f"{c}, {s}, India" if s else f"{c}, India"
-            loc = geolocator.geocode(query, timeout=2.5)
-            if loc:
-                return loc.latitude, loc.longitude, "API (City Fallback)"
-        except:
-            pass
-
-    # 5. Fallback to State in Dictionary (instant)
     if s and s in STATE_COORDS:
-        return STATE_COORDS[s][0], STATE_COORDS[s][1], "State (Fallback)"
+        return STATE_COORDS[s][0], STATE_COORDS[s][1], "State (Instant)"
 
+    # 2. API Lookup (Slow - Only if completely missing from dict)
+    geolocator = Nominatim(user_agent="huliot_site_analytics_app_v2")
+    queries = []
+    if project and area and city: queries.append(f"{project}, {area}, {city}, India")
+    if area and city: queries.append(f"{area}, {city}, {state}, India")
+    if city and state: queries.append(f"{city}, {state}, India")
+        
+    for query in queries:
+        try:
+            # Short timeout to ensure app doesn't hang forever
+            location = geolocator.geocode(query, timeout=2)
+            if location:
+                return location.latitude, location.longitude, "API Found"
+        except:
+            continue
+            
     return None, None, "Not Found"
 
 
@@ -1277,9 +1261,7 @@ visits_df, master_df = load_data()
 
 with st.sidebar:
     if st.button("🔄 Refresh Data"):
-        # TARGETED CLEAR: We only wipe the sheet data, NEVER the map geocoding cache
-        load_data.clear()
-        load_issues.clear()
+        st.cache_data.clear()
         st.rerun()
     st.caption(f"🕐 Auto-refreshes every 2 min\nLast load: {datetime.now().strftime('%H:%M:%S')}")
     st.markdown("---")
@@ -1981,7 +1963,7 @@ with tab_issues:
     st.markdown("Raise, assign, and track site issues from Open → Resolved.")
 
     if st.button("🔄 Refresh Issues", key="refresh_issues"):
-        load_issues.clear() # TARGETED CLEAR: Only clear the issues cache, protect the map cache
+        st.cache_data.clear()
         st.rerun()
 
     issues_df = load_issues()
@@ -2309,60 +2291,51 @@ with tab_map:
 
             map_rows = []
             unmatched = []
-            
-            # Wrap the API lookups in a spinner so the UI doesn't appear frozen
-            with st.spinner("📍 Geocoding site locations... Please wait."):
-                for _, row in filtered_map_df.iterrows():
-                    proj_name = str(row.get(map_site_col, "")).strip()
-                    if not proj_name:
-                        continue
-                    state_val  = str(row.get(map_state_col, "")).strip() if map_state_col else ""
-                    dist_val   = str(row.get(map_dist_col, "")).strip() if map_dist_col else ""
-                    area_val   = str(row.get(map_area_col, "")).strip() if map_area_col else ""
-                    status_val = str(row.get(map_status_col, "")).strip() if map_status_col else "Unknown"
-                    tech_val   = str(row.get(map_tech_col, "")).strip() if map_tech_col else ""
-                    sales_val  = str(row.get(map_sales_col, "")).strip() if map_sales_col else ""
-                    ong_val    = str(row.get(map_ong_col, "")).strip() if map_ong_col else ""
-    
-                    lat = lon = None
-                    level = "Unknown"
-                    
-                    # 1. First check if the Google Sheet already has exact Lat/Lon columns provided by the user
-                    if map_lat_col and map_lon_col:
-                        try:
-                            lat = float(str(row.get(map_lat_col, "")).strip())
-                            lon = float(str(row.get(map_lon_col, "")).strip())
-                            level = "Exact from Sheet"
-                        except ValueError:
-                            pass
-                            
-                    # 2. Fast Hybrid Geocode (Dictionary first, API fallback)
-                    if lat is None or lon is None:
-                        # Notice we no longer pass proj_name here. It relies strictly on area/city caching
-                        lat, lon, level = get_coordinates(area_val, dist_val, state_val)
-    
-                    if lat is None:
-                        unmatched.append(proj_name)
-                        continue
+            for _, row in filtered_map_df.iterrows():
+                proj_name = str(row.get(map_site_col, "")).strip()
+                if not proj_name:
+                    continue
+                state_val  = str(row.get(map_state_col, "")).strip() if map_state_col else ""
+                dist_val   = str(row.get(map_dist_col, "")).strip() if map_dist_col else ""
+                area_val   = str(row.get(map_area_col, "")).strip() if map_area_col else ""
+                status_val = str(row.get(map_status_col, "")).strip() if map_status_col else "Unknown"
+                tech_val   = str(row.get(map_tech_col, "")).strip() if map_tech_col else ""
+                sales_val  = str(row.get(map_sales_col, "")).strip() if map_sales_col else ""
+                ong_val    = str(row.get(map_ong_col, "")).strip() if map_ong_col else ""
+
+                lat = lon = None
+                level = "Unknown"
+                
+                # 1. First check if the Google Sheet already has exact Lat/Lon columns provided by the user
+                if map_lat_col and map_lon_col:
+                    try:
+                        lat = float(str(row.get(map_lat_col, "")).strip())
+                        lon = float(str(row.get(map_lon_col, "")).strip())
+                        level = "Exact from Sheet"
+                    except ValueError:
+                        pass
                         
-                    # ADD A TINY RANDOM JITTER SO PINS IN THE EXACT SAME AREA DON'T PERFECTLY OVERLAP
-                    if level != "Exact from Sheet":
-                        lat += random.uniform(-0.003, 0.003)
-                        lon += random.uniform(-0.003, 0.003)
-    
-                    map_rows.append({
-                        "Project": proj_name,
-                        "State": state_val or "-",
-                        "District/City": dist_val or "-",
-                        "Area": area_val or "-",
-                        "Status": status_val or "Unknown",
-                        "Technical Person": tech_val or "-",
-                        "Sales Person": sales_val or "-",
-                        "Ongoing": ong_val or "-",
-                        "lat": lat,
-                        "lon": lon,
-                        "Match Level": level,
-                    })
+                # 2. Fast Hybrid Geocode (Dictionary first, API fallback)
+                if lat is None or lon is None:
+                    lat, lon, level = geocode_site(proj_name, area_val, dist_val, state_val)
+
+                if lat is None:
+                    unmatched.append(proj_name)
+                    continue
+
+                map_rows.append({
+                    "Project": proj_name,
+                    "State": state_val or "-",
+                    "District/City": dist_val or "-",
+                    "Area": area_val or "-",
+                    "Status": status_val or "Unknown",
+                    "Technical Person": tech_val or "-",
+                    "Sales Person": sales_val or "-",
+                    "Ongoing": ong_val or "-",
+                    "lat": lat,
+                    "lon": lon,
+                    "Match Level": level,
+                })
 
             map_df = pd.DataFrame(map_rows)
 
