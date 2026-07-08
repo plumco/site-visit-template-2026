@@ -8,4 +8,4 @@ PyYAML
 requests
 openpyxl
 reportlab
-
+folium
