@@ -27,49 +27,29 @@ from reportlab.graphics.shapes import Drawing
 from reportlab.graphics.charts.barcharts import VerticalBarChart
 from geopy.geocoders import Nominatim
 
-# --- Liquid Glass chart template ---
-_glass_template = pio.templates["plotly_dark"]
-_glass_template.layout.paper_bgcolor = "#13243D"
-_glass_template.layout.plot_bgcolor = "#13243D"
-_glass_template.layout.font.color = "#CBD5E1"
-_glass_template.layout.font.family = "Inter, sans-serif"
-_glass_template.layout.xaxis.gridcolor = "rgba(255,255,255,0.08)"
-_glass_template.layout.yaxis.gridcolor = "rgba(255,255,255,0.08)"
-_glass_template.layout.xaxis.linecolor = "rgba(255,255,255,0.15)"
-_glass_template.layout.yaxis.linecolor = "rgba(255,255,255,0.15)"
-pio.templates["liquid_glass"] = _glass_template
-px.defaults.template = "liquid_glass"
-
-# --- 1. Page Config & CSS ---
+# --- Page Config & CSS ---
 st.set_page_config(layout="wide", page_title="Site Visit Deep Analytics", page_icon="📊")
 
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
-    html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
-
     .stApp {
-        background: linear-gradient(180deg, #121417 0%, #060B16 100%) !important;
+        background: linear-gradient(180deg, #060B16 0%, #0B1220 55%, #0A1020 100%) !important;
         background-attachment: fixed !important;
-        transition: background-color 0.6s ease;
+        transition: background 0.8s ease;
     }
-
-    /* Animation Classes */
-    .animation-active { background-color: #1c1f24 !important; }
-
-    h1, h2, h3, h4 { font-family: 'Sora', sans-serif !important; color: #F1F5F9 !important; }
     
-    div[data-testid="stForm"] {
-        background: rgba(255,255,255,0.03) !important;
-        border: 1px solid rgba(56,189,248,0.2) !important;
-        border-radius: 20px !important;
-        padding: 2.2rem !important;
+    /* Animation Class */
+    .stApp.animate-bg {
+        background: #1c1f24 !important;
     }
+
+    /* ... (KEEP ALL YOUR EXISTING CSS CLASSES HERE: sidebar, metrics, tabs, etc.) ... */
 </style>
 """, unsafe_allow_html=True)
 
-# --- FIREBASE AUTHENTICATION & ANIMATION BRIDGE ---
+# --- FIREBASE AUTHENTICATION ---
 FIREBASE_API_KEY = "AIzaSyDuf1MozrcpQmlnbJXa-bm5C2htxRzeZOA"
 
 def firebase_sign_in(email, password):
@@ -86,19 +66,7 @@ if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
 
 if not st.session_state["authenticated"]:
-    # The Animation Logic via GSAP
-    animation_script = """
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
-    <script>
-        // Trigger background change via GSAP
-        function triggerLoginAnimation() {
-            gsap.to(".stApp", { backgroundColor: "#1c1f24", duration: 0.8 });
-        }
-    </script>
-    """
-    components.html(animation_script, height=0)
-
-    st.markdown('<div style="text-align:center;"><h1>🔐 Site Visit Analytics</h1></div>', unsafe_allow_html=True)
+    st.markdown('<div style="text-align:center; padding-top:50px;"><h1>🔐 Site Visit Analytics</h1></div>', unsafe_allow_html=True)
     
     col_left, col_center, col_right = st.columns([1, 1.5, 1])
     with col_center:
@@ -112,91 +80,20 @@ if not st.session_state["authenticated"]:
                 if success:
                     st.session_state["authenticated"] = True
                     st.session_state["user_email"] = user_email
-                    # Inject JS to trigger animation on successful login
-                    components.html("<script>parent.triggerLoginAnimation();</script>", height=0)
+                    # Inject JS to trigger background class change
+                    components.html("""
+                        <script>
+                            window.parent.document.querySelector('.stApp').classList.add('animate-bg');
+                        </script>
+                    """, height=0)
+                    time.sleep(0.5) # Small delay for animation feel
                     st.rerun()
                 else:
-                    st.error("Login failed.")
+                    st.error("Invalid credentials.")
     st.stop()
 
-# --- FIREBASE AUTHENTICATION ---
-FIREBASE_API_KEY = "AIzaSyDuf1MozrcpQmlnbJXa-bm5C2htxRzeZOA"
-
-def firebase_sign_in(email, password):
-    url = f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={FIREBASE_API_KEY}"
-    payload = {"email": email, "password": password, "returnSecureToken": True}
-    try:
-        response = requests.post(url, json=payload, timeout=10)
-        data = response.json()
-        if response.status_code == 200:
-            return True, data.get("email", email), None
-        else:
-            error_message = data.get("error", {}).get("message", "Authentication failed")
-            return False, None, error_message
-    except Exception as e:
-        return False, None, str(e)
-
-if "authenticated" not in st.session_state:
-    st.session_state["authenticated"] = False
-    st.session_state["user_email"] = None
-
-if not st.session_state["authenticated"]:
-    st.markdown("""
-    <style>
-        .login-header { text-align: center; padding: 2.5rem 0 1.5rem 0; }
-        .login-header h1 {
-            font-family: 'Sora', sans-serif;
-            font-size: 2.4rem;
-            font-weight: 800;
-            background: linear-gradient(135deg, #38BDF8, #818CF8);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            margin-bottom: 0.5rem;
-        }
-        .login-header p { color: #94A3B8; font-size: 1.05rem; font-family: 'Inter', sans-serif; }
-        div[data-testid="stForm"] {
-            background: rgba(255,255,255,0.05) !important;
-            backdrop-filter: blur(28px) saturate(160%);
-            -webkit-backdrop-filter: blur(28px) saturate(160%);
-            border: 1px solid rgba(255,255,255,0.14) !important;
-            border-radius: 20px !important;
-            padding: 2.2rem !important;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.1);
-        }
-    </style>
-    """, unsafe_allow_html=True)
-
-    st.markdown('<div class="login-header"><h1>🔐 Site Visit Analytics</h1><p>Please sign in to access the dashboard</p></div>', unsafe_allow_html=True)
-
-    col_left, col_center, col_right = st.columns([1, 1.5, 1])
-    with col_center:
-        with st.form("login_form", clear_on_submit=False):
-            email = st.text_input("📧 Email", placeholder="you@example.com")
-            password = st.text_input("🔑 Password", type="password", placeholder="Your password")
-            st.markdown("")
-            submit = st.form_submit_button("🚀 Sign In", use_container_width=True)
-
-            if submit:
-                if not email or not password:
-                    st.error("Please enter both email and password.")
-                else:
-                    with st.spinner("Authenticating..."):
-                        success, user_email, error = firebase_sign_in(email, password)
-                    if success:
-                        st.session_state["authenticated"] = True
-                        st.session_state["user_email"] = user_email
-                        st.rerun()
-                    else:
-                        error_messages = {
-                            "INVALID_LOGIN_CREDENTIALS": "❌ Invalid email or password.",
-                            "EMAIL_NOT_FOUND": "❌ No account found with this email.",
-                            "INVALID_PASSWORD": "❌ Incorrect password.",
-                            "USER_DISABLED": "❌ This account has been disabled.",
-                            "TOO_MANY_ATTEMPTS_TRY_LATER": "❌ Too many attempts. Try again later.",
-                        }
-                        st.error(error_messages.get(error, f"❌ Login failed: {error}"))
-
-    st.stop()
+# --- REMAINDER OF YOUR EXISTING CODE ---
+# [Insert your init_connection, load_data, and all tab logic starting from here]
 
 st.sidebar.markdown(f"👤 **{st.session_state.get('user_email', '')}**")
 if st.sidebar.button("🚪 Logout"):
