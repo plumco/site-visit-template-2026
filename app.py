@@ -47,213 +47,77 @@ st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
-    html, body, [class*="css"] {
-        font-family: 'Inter', sans-serif;
-    }
+    html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
 
     .stApp {
-        background:
-            radial-gradient(circle at 12% 18%, rgba(56,189,248,0.30) 0%, transparent 40%),
-            radial-gradient(circle at 88% 6%, rgba(129,140,248,0.26) 0%, transparent 38%),
-            radial-gradient(circle at 50% 100%, rgba(34,211,238,0.22) 0%, transparent 45%),
-            radial-gradient(circle at 30% 70%, rgba(99,102,241,0.16) 0%, transparent 40%),
-            linear-gradient(180deg, #060B16 0%, #0B1220 55%, #0A1020 100%) !important;
+        background: linear-gradient(180deg, #121417 0%, #060B16 100%) !important;
         background-attachment: fixed !important;
+        transition: background-color 0.6s ease;
     }
 
-    [data-testid="stAppViewContainer"], [data-testid="stHeader"], [data-testid="stMain"],
-    [data-testid="stToolbar"], [data-testid="stDecoration"], [data-testid="stBottomBlockContainer"] {
-        background: transparent !important;
-    }
+    /* Animation Classes */
+    .animation-active { background-color: #1c1f24 !important; }
 
-    h1, h2, h3, h4 {
-        font-family: 'Sora', sans-serif !important;
-        color: #F1F5F9 !important;
-        letter-spacing: -0.01em;
-    }
-    h1 { font-weight: 800 !important; }
-    h2, h3 { font-weight: 700 !important; }
-
-    p, span, label, .stMarkdown, .stCaption, div[data-testid="stCaptionContainer"] {
-        color: #CBD5E1;
-    }
-
-    section[data-testid="stSidebar"] {
-        background: rgba(15, 23, 42, 0.55) !important;
-        backdrop-filter: blur(24px) saturate(150%);
-        -webkit-backdrop-filter: blur(24px) saturate(150%);
-        border-right: 1px solid rgba(255,255,255,0.08);
-    }
-    section[data-testid="stSidebar"] * {
-        color: #E2E8F0 !important;
-    }
-
-    div[data-testid="stMetric"], div[data-testid="metric-container"] {
-        background: linear-gradient(160deg, rgba(56,189,248,0.10), rgba(255,255,255,0.04)) !important;
-        backdrop-filter: blur(20px) saturate(160%);
-        -webkit-backdrop-filter: blur(20px) saturate(160%);
-        border: 1px solid rgba(56,189,248,0.20) !important;
-        border-radius: 18px !important;
-        padding: 1.4rem 1.2rem !important;
-        box-shadow: 0 8px 32px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.08);
-        transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
-    }
-    div[data-testid="stMetric"]:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 12px 40px rgba(56,189,248,0.25), inset 0 1px 0 rgba(255,255,255,0.1);
-        border-color: rgba(56,189,248,0.5) !important;
-    }
-    div[data-testid="stMetricLabel"] {
-        color: #94A3B8 !important;
-        font-family: 'Inter', sans-serif !important;
-        font-size: 0.78rem !important;
-        letter-spacing: 0.04em;
-        text-transform: uppercase;
-    }
-    div[data-testid="stMetricValue"] {
-        color: #F8FAFC !important;
-        font-family: 'JetBrains Mono', monospace !important;
-        font-weight: 600 !important;
-    }
-
-    .stTabs [data-baseweb="tab-list"] {
-        background: rgba(255,255,255,0.04);
-        backdrop-filter: blur(16px);
-        border-radius: 14px;
-        padding: 6px;
-        border: 1px solid rgba(255,255,255,0.08);
-        gap: 6px;
-    }
-    .stTabs [data-baseweb="tab"] {
-        color: #94A3B8 !important;
+    h1, h2, h3, h4 { font-family: 'Sora', sans-serif !important; color: #F1F5F9 !important; }
+    
+    div[data-testid="stForm"] {
         background: rgba(255,255,255,0.03) !important;
-        border: 1px solid rgba(255,255,255,0.08) !important;
-        border-radius: 10px !important;
-        padding: 8px 16px !important;
-        font-family: 'Sora', sans-serif !important;
-        font-weight: 600 !important;
-        font-size: 0.9rem !important;
-        transition: all 0.18s ease;
+        border: 1px solid rgba(56,189,248,0.2) !important;
+        border-radius: 20px !important;
+        padding: 2.2rem !important;
     }
-    .stTabs [data-baseweb="tab"]:hover {
-        background: rgba(56,189,248,0.08) !important;
-        border-color: rgba(56,189,248,0.25) !important;
-        color: #CBD5E1 !important;
-    }
-    .stTabs [aria-selected="true"] {
-        background: rgba(56,189,248,0.18) !important;
-        border-color: rgba(56,189,248,0.45) !important;
-        color: #7DD3FC !important;
-        box-shadow: 0 0 16px rgba(56,189,248,0.15);
-    }
-    .stTabs [data-baseweb="tab-highlight"],
-    .stTabs [data-baseweb="tab-border"] {
-        display: none !important;
-        height: 0 !important;
-        background: transparent !important;
-    }
-
-    .stButton button, .stDownloadButton button, .stFormSubmitButton button,
-    button[kind="secondary"], button[kind="primary"],
-    button[data-testid="baseButton-secondary"], button[data-testid="baseButton-primary"],
-    button[data-testid="stBaseButton-secondary"], button[data-testid="stBaseButton-primary"] {
-        background: rgba(56,189,248,0.14) !important;
-        backdrop-filter: blur(12px);
-        border: 1px solid rgba(56,189,248,0.45) !important;
-        color: #7DD3FC !important;
-        border-radius: 12px !important;
-        font-family: 'Sora', sans-serif !important;
-        font-weight: 600 !important;
-        transition: all 0.2s ease;
-    }
-    .stButton button:hover, .stDownloadButton button:hover, .stFormSubmitButton button:hover,
-    button[kind="secondary"]:hover, button[kind="primary"]:hover,
-    button[data-testid="baseButton-secondary"]:hover, button[data-testid="baseButton-primary"]:hover,
-    button[data-testid="stBaseButton-secondary"]:hover, button[data-testid="stBaseButton-primary"]:hover {
-        background: rgba(56,189,248,0.26) !important;
-        box-shadow: 0 0 20px rgba(56,189,248,0.3);
-        border-color: rgba(56,189,248,0.7) !important;
-        color: #E0F2FE !important;
-    }
-    .stButton button p, .stDownloadButton button p, .stFormSubmitButton button p {
-        color: inherit !important;
-    }
-
-    div[data-testid="stExpander"] {
-        background: rgba(255,255,255,0.04) !important;
-        backdrop-filter: blur(16px);
-        -webkit-backdrop-filter: blur(16px);
-        border: 1px solid rgba(255,255,255,0.1) !important;
-        border-radius: 14px !important;
-    }
-
-    div[data-baseweb="select"] > div,
-    .stTextInput input, .stTextArea textarea, .stDateInput input {
-        background: rgba(255,255,255,0.05) !important;
-        border: 1px solid rgba(255,255,255,0.12) !important;
-        border-radius: 10px !important;
-        color: #F1F5F9 !important;
-    }
-
-    div[data-testid="stDataFrame"] {
-        border-radius: 14px;
-        overflow: hidden;
-        border: 1px solid rgba(56,189,248,0.15);
-    }
-
-    div[data-testid="stDataFrame"] *, .stApp {
-        scrollbar-width: thin;
-        scrollbar-color: rgba(56,189,248,0.45) rgba(255,255,255,0.05);
-    }
-    ::-webkit-scrollbar {
-        width: 10px;
-        height: 10px;
-    }
-    ::-webkit-scrollbar-track {
-        background: rgba(255,255,255,0.04);
-        border-radius: 8px;
-    }
-    ::-webkit-scrollbar-thumb {
-        background-color: rgba(56,189,248,0.40);
-        border-radius: 8px;
-        border: 2px solid transparent;
-        background-clip: padding-box;
-    }
-    ::-webkit-scrollbar-thumb:hover {
-        background-color: rgba(56,189,248,0.65);
-    }
-    ::-webkit-scrollbar-corner {
-        background: transparent;
-    }
-
-    div[data-testid="stVerticalBlockBorderWrapper"] {
-        background: rgba(255,255,255,0.05) !important;
-        backdrop-filter: blur(18px) saturate(150%);
-        -webkit-backdrop-filter: blur(18px) saturate(150%);
-        border: 1px solid rgba(56,189,248,0.14) !important;
-        border-radius: 16px !important;
-        padding: 0.6rem !important;
-        box-shadow: 0 6px 24px rgba(0,0,0,0.3);
-    }
-
-    .highlight-card {
-        padding: 22px;
-        border-radius: 16px;
-        text-align: left;
-        font-family: 'Inter', sans-serif;
-        margin-top: 10px;
-        backdrop-filter: blur(20px) saturate(160%);
-        -webkit-backdrop-filter: blur(20px) saturate(160%);
-        box-shadow: 0 8px 28px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.08);
-        border: 1px solid;
-    }
-    .card-blue  { background: rgba(56,189,248,0.10);  border-color: rgba(56,189,248,0.30);  color: #7DD3FC; }
-    .card-green { background: rgba(52,211,153,0.10);  border-color: rgba(52,211,153,0.30);  color: #6EE7B7; }
-    .card-red   { background: rgba(248,113,113,0.10); border-color: rgba(248,113,113,0.30); color: #FCA5A5; }
-    .card-title { font-size: 0.82rem; margin-bottom: 6px; opacity: 0.9; font-weight: 600; letter-spacing: 0.02em; }
-    .card-value { font-size: 1.15rem; font-family: 'JetBrains Mono', monospace; font-weight: 600; color: #F1F5F9; }
 </style>
 """, unsafe_allow_html=True)
+
+# --- FIREBASE AUTHENTICATION & ANIMATION BRIDGE ---
+FIREBASE_API_KEY = "AIzaSyDuf1MozrcpQmlnbJXa-bm5C2htxRzeZOA"
+
+def firebase_sign_in(email, password):
+    url = f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={FIREBASE_API_KEY}"
+    payload = {"email": email, "password": password, "returnSecureToken": True}
+    try:
+        response = requests.post(url, json=payload, timeout=10)
+        data = response.json()
+        return (True, data.get("email", email), None) if response.status_code == 200 else (False, None, data.get("error", {}).get("message"))
+    except Exception as e:
+        return False, None, str(e)
+
+if "authenticated" not in st.session_state:
+    st.session_state["authenticated"] = False
+
+if not st.session_state["authenticated"]:
+    # The Animation Logic via GSAP
+    animation_script = """
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <script>
+        // Trigger background change via GSAP
+        function triggerLoginAnimation() {
+            gsap.to(".stApp", { backgroundColor: "#1c1f24", duration: 0.8 });
+        }
+    </script>
+    """
+    components.html(animation_script, height=0)
+
+    st.markdown('<div style="text-align:center;"><h1>🔐 Site Visit Analytics</h1></div>', unsafe_allow_html=True)
+    
+    col_left, col_center, col_right = st.columns([1, 1.5, 1])
+    with col_center:
+        with st.form("login_form"):
+            email = st.text_input("📧 Email")
+            password = st.text_input("🔑 Password", type="password")
+            submit = st.form_submit_button("🚀 Sign In")
+
+            if submit:
+                success, user_email, error = firebase_sign_in(email, password)
+                if success:
+                    st.session_state["authenticated"] = True
+                    st.session_state["user_email"] = user_email
+                    # Inject JS to trigger animation on successful login
+                    components.html("<script>parent.triggerLoginAnimation();</script>", height=0)
+                    st.rerun()
+                else:
+                    st.error("Login failed.")
+    st.stop()
 
 # --- FIREBASE AUTHENTICATION ---
 FIREBASE_API_KEY = "AIzaSyDuf1MozrcpQmlnbJXa-bm5C2htxRzeZOA"
