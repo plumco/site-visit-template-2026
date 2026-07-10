@@ -27,25 +27,231 @@ from reportlab.graphics.shapes import Drawing
 from reportlab.graphics.charts.barcharts import VerticalBarChart
 from geopy.geocoders import Nominatim
 
-# --- Page Config & CSS ---
+# --- Liquid Glass chart template ---
+_glass_template = pio.templates["plotly_dark"]
+_glass_template.layout.paper_bgcolor = "#13243D"
+_glass_template.layout.plot_bgcolor = "#13243D"
+_glass_template.layout.font.color = "#CBD5E1"
+_glass_template.layout.font.family = "Inter, sans-serif"
+_glass_template.layout.xaxis.gridcolor = "rgba(255,255,255,0.08)"
+_glass_template.layout.yaxis.gridcolor = "rgba(255,255,255,0.08)"
+_glass_template.layout.xaxis.linecolor = "rgba(255,255,255,0.15)"
+_glass_template.layout.yaxis.linecolor = "rgba(255,255,255,0.15)"
+pio.templates["liquid_glass"] = _glass_template
+px.defaults.template = "liquid_glass"
+
+# --- 1. Page Config & CSS ---
 st.set_page_config(layout="wide", page_title="Site Visit Deep Analytics", page_icon="📊")
 
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
-    .stApp {
-        background: linear-gradient(180deg, #060B16 0%, #0B1220 55%, #0A1020 100%) !important;
-        background-attachment: fixed !important;
-        transition: background 0.8s ease;
-    }
-    
-    /* Animation Class */
-    .stApp.animate-bg {
-        background: #1c1f24 !important;
+    html, body, [class*="css"] {
+        font-family: 'Inter', sans-serif;
     }
 
-    /* ... (KEEP ALL YOUR EXISTING CSS CLASSES HERE: sidebar, metrics, tabs, etc.) ... */
+    .stApp {
+        background:
+            radial-gradient(circle at 12% 18%, rgba(56,189,248,0.30) 0%, transparent 40%),
+            radial-gradient(circle at 88% 6%, rgba(129,140,248,0.26) 0%, transparent 38%),
+            radial-gradient(circle at 50% 100%, rgba(34,211,238,0.22) 0%, transparent 45%),
+            radial-gradient(circle at 30% 70%, rgba(99,102,241,0.16) 0%, transparent 40%),
+            linear-gradient(180deg, #060B16 0%, #0B1220 55%, #0A1020 100%) !important;
+        background-attachment: fixed !important;
+    }
+
+    [data-testid="stAppViewContainer"], [data-testid="stHeader"], [data-testid="stMain"],
+    [data-testid="stToolbar"], [data-testid="stDecoration"], [data-testid="stBottomBlockContainer"] {
+        background: transparent !important;
+    }
+
+    h1, h2, h3, h4 {
+        font-family: 'Sora', sans-serif !important;
+        color: #F1F5F9 !important;
+        letter-spacing: -0.01em;
+    }
+    h1 { font-weight: 800 !important; }
+    h2, h3 { font-weight: 700 !important; }
+
+    p, span, label, .stMarkdown, .stCaption, div[data-testid="stCaptionContainer"] {
+        color: #CBD5E1;
+    }
+
+    section[data-testid="stSidebar"] {
+        background: rgba(15, 23, 42, 0.55) !important;
+        backdrop-filter: blur(24px) saturate(150%);
+        -webkit-backdrop-filter: blur(24px) saturate(150%);
+        border-right: 1px solid rgba(255,255,255,0.08);
+    }
+    section[data-testid="stSidebar"] * {
+        color: #E2E8F0 !important;
+    }
+
+    div[data-testid="stMetric"], div[data-testid="metric-container"] {
+        background: linear-gradient(160deg, rgba(56,189,248,0.10), rgba(255,255,255,0.04)) !important;
+        backdrop-filter: blur(20px) saturate(160%);
+        -webkit-backdrop-filter: blur(20px) saturate(160%);
+        border: 1px solid rgba(56,189,248,0.20) !important;
+        border-radius: 18px !important;
+        padding: 1.4rem 1.2rem !important;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.08);
+        transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+    }
+    div[data-testid="stMetric"]:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 12px 40px rgba(56,189,248,0.25), inset 0 1px 0 rgba(255,255,255,0.1);
+        border-color: rgba(56,189,248,0.5) !important;
+    }
+    div[data-testid="stMetricLabel"] {
+        color: #94A3B8 !important;
+        font-family: 'Inter', sans-serif !important;
+        font-size: 0.78rem !important;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+    }
+    div[data-testid="stMetricValue"] {
+        color: #F8FAFC !important;
+        font-family: 'JetBrains Mono', monospace !important;
+        font-weight: 600 !important;
+    }
+
+    .stTabs [data-baseweb="tab-list"] {
+        background: rgba(255,255,255,0.04);
+        backdrop-filter: blur(16px);
+        border-radius: 14px;
+        padding: 6px;
+        border: 1px solid rgba(255,255,255,0.08);
+        gap: 6px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        color: #94A3B8 !important;
+        background: rgba(255,255,255,0.03) !important;
+        border: 1px solid rgba(255,255,255,0.08) !important;
+        border-radius: 10px !important;
+        padding: 8px 16px !important;
+        font-family: 'Sora', sans-serif !important;
+        font-weight: 600 !important;
+        font-size: 0.9rem !important;
+        transition: all 0.18s ease;
+    }
+    .stTabs [data-baseweb="tab"]:hover {
+        background: rgba(56,189,248,0.08) !important;
+        border-color: rgba(56,189,248,0.25) !important;
+        color: #CBD5E1 !important;
+    }
+    .stTabs [aria-selected="true"] {
+        background: rgba(56,189,248,0.18) !important;
+        border-color: rgba(56,189,248,0.45) !important;
+        color: #7DD3FC !important;
+        box-shadow: 0 0 16px rgba(56,189,248,0.15);
+    }
+    .stTabs [data-baseweb="tab-highlight"],
+    .stTabs [data-baseweb="tab-border"] {
+        display: none !important;
+        height: 0 !important;
+        background: transparent !important;
+    }
+
+    .stButton button, .stDownloadButton button, .stFormSubmitButton button,
+    button[kind="secondary"], button[kind="primary"],
+    button[data-testid="baseButton-secondary"], button[data-testid="baseButton-primary"],
+    button[data-testid="stBaseButton-secondary"], button[data-testid="stBaseButton-primary"] {
+        background: rgba(56,189,248,0.14) !important;
+        backdrop-filter: blur(12px);
+        border: 1px solid rgba(56,189,248,0.45) !important;
+        color: #7DD3FC !important;
+        border-radius: 12px !important;
+        font-family: 'Sora', sans-serif !important;
+        font-weight: 600 !important;
+        transition: all 0.2s ease;
+    }
+    .stButton button:hover, .stDownloadButton button:hover, .stFormSubmitButton button:hover,
+    button[kind="secondary"]:hover, button[kind="primary"]:hover,
+    button[data-testid="baseButton-secondary"]:hover, button[data-testid="baseButton-primary"]:hover,
+    button[data-testid="stBaseButton-secondary"]:hover, button[data-testid="stBaseButton-primary"]:hover {
+        background: rgba(56,189,248,0.26) !important;
+        box-shadow: 0 0 20px rgba(56,189,248,0.3);
+        border-color: rgba(56,189,248,0.7) !important;
+        color: #E0F2FE !important;
+    }
+    .stButton button p, .stDownloadButton button p, .stFormSubmitButton button p {
+        color: inherit !important;
+    }
+
+    div[data-testid="stExpander"] {
+        background: rgba(255,255,255,0.04) !important;
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border: 1px solid rgba(255,255,255,0.1) !important;
+        border-radius: 14px !important;
+    }
+
+    div[data-baseweb="select"] > div,
+    .stTextInput input, .stTextArea textarea, .stDateInput input {
+        background: rgba(255,255,255,0.05) !important;
+        border: 1px solid rgba(255,255,255,0.12) !important;
+        border-radius: 10px !important;
+        color: #F1F5F9 !important;
+    }
+
+    div[data-testid="stDataFrame"] {
+        border-radius: 14px;
+        overflow: hidden;
+        border: 1px solid rgba(56,189,248,0.15);
+    }
+
+    div[data-testid="stDataFrame"] *, .stApp {
+        scrollbar-width: thin;
+        scrollbar-color: rgba(56,189,248,0.45) rgba(255,255,255,0.05);
+    }
+    ::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+    }
+    ::-webkit-scrollbar-track {
+        background: rgba(255,255,255,0.04);
+        border-radius: 8px;
+    }
+    ::-webkit-scrollbar-thumb {
+        background-color: rgba(56,189,248,0.40);
+        border-radius: 8px;
+        border: 2px solid transparent;
+        background-clip: padding-box;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+        background-color: rgba(56,189,248,0.65);
+    }
+    ::-webkit-scrollbar-corner {
+        background: transparent;
+    }
+
+    div[data-testid="stVerticalBlockBorderWrapper"] {
+        background: rgba(255,255,255,0.05) !important;
+        backdrop-filter: blur(18px) saturate(150%);
+        -webkit-backdrop-filter: blur(18px) saturate(150%);
+        border: 1px solid rgba(56,189,248,0.14) !important;
+        border-radius: 16px !important;
+        padding: 0.6rem !important;
+        box-shadow: 0 6px 24px rgba(0,0,0,0.3);
+    }
+
+    .highlight-card {
+        padding: 22px;
+        border-radius: 16px;
+        text-align: left;
+        font-family: 'Inter', sans-serif;
+        margin-top: 10px;
+        backdrop-filter: blur(20px) saturate(160%);
+        -webkit-backdrop-filter: blur(20px) saturate(160%);
+        box-shadow: 0 8px 28px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.08);
+        border: 1px solid;
+    }
+    .card-blue  { background: rgba(56,189,248,0.10);  border-color: rgba(56,189,248,0.30);  color: #7DD3FC; }
+    .card-green { background: rgba(52,211,153,0.10);  border-color: rgba(52,211,153,0.30);  color: #6EE7B7; }
+    .card-red   { background: rgba(248,113,113,0.10); border-color: rgba(248,113,113,0.30); color: #FCA5A5; }
+    .card-title { font-size: 0.82rem; margin-bottom: 6px; opacity: 0.9; font-weight: 600; letter-spacing: 0.02em; }
+    .card-value { font-size: 1.15rem; font-family: 'JetBrains Mono', monospace; font-weight: 600; color: #F1F5F9; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -58,42 +264,75 @@ def firebase_sign_in(email, password):
     try:
         response = requests.post(url, json=payload, timeout=10)
         data = response.json()
-        return (True, data.get("email", email), None) if response.status_code == 200 else (False, None, data.get("error", {}).get("message"))
+        if response.status_code == 200:
+            return True, data.get("email", email), None
+        else:
+            error_message = data.get("error", {}).get("message", "Authentication failed")
+            return False, None, error_message
     except Exception as e:
         return False, None, str(e)
 
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
+    st.session_state["user_email"] = None
 
 if not st.session_state["authenticated"]:
-    st.markdown('<div style="text-align:center; padding-top:50px;"><h1>🔐 Site Visit Analytics</h1></div>', unsafe_allow_html=True)
-    
+    st.markdown("""
+    <style>
+        .login-header { text-align: center; padding: 2.5rem 0 1.5rem 0; }
+        .login-header h1 {
+            font-family: 'Sora', sans-serif;
+            font-size: 2.4rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, #38BDF8, #818CF8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 0.5rem;
+        }
+        .login-header p { color: #94A3B8; font-size: 1.05rem; font-family: 'Inter', sans-serif; }
+        div[data-testid="stForm"] {
+            background: rgba(255,255,255,0.05) !important;
+            backdrop-filter: blur(28px) saturate(160%);
+            -webkit-backdrop-filter: blur(28px) saturate(160%);
+            border: 1px solid rgba(255,255,255,0.14) !important;
+            border-radius: 20px !important;
+            padding: 2.2rem !important;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.1);
+        }
+    </style>
+    """, unsafe_allow_html=True)
+
+    st.markdown('<div class="login-header"><h1>🔐 Site Visit Analytics</h1><p>Please sign in to access the dashboard</p></div>', unsafe_allow_html=True)
+
     col_left, col_center, col_right = st.columns([1, 1.5, 1])
     with col_center:
-        with st.form("login_form"):
-            email = st.text_input("📧 Email")
-            password = st.text_input("🔑 Password", type="password")
-            submit = st.form_submit_button("🚀 Sign In")
+        with st.form("login_form", clear_on_submit=False):
+            email = st.text_input("📧 Email", placeholder="you@example.com")
+            password = st.text_input("🔑 Password", type="password", placeholder="Your password")
+            st.markdown("")
+            submit = st.form_submit_button("🚀 Sign In", use_container_width=True)
 
             if submit:
-                success, user_email, error = firebase_sign_in(email, password)
-                if success:
-                    st.session_state["authenticated"] = True
-                    st.session_state["user_email"] = user_email
-                    # Inject JS to trigger background class change
-                    components.html("""
-                        <script>
-                            window.parent.document.querySelector('.stApp').classList.add('animate-bg');
-                        </script>
-                    """, height=0)
-                    time.sleep(0.5) # Small delay for animation feel
-                    st.rerun()
+                if not email or not password:
+                    st.error("Please enter both email and password.")
                 else:
-                    st.error("Invalid credentials.")
-    st.stop()
+                    with st.spinner("Authenticating..."):
+                        success, user_email, error = firebase_sign_in(email, password)
+                    if success:
+                        st.session_state["authenticated"] = True
+                        st.session_state["user_email"] = user_email
+                        st.rerun()
+                    else:
+                        error_messages = {
+                            "INVALID_LOGIN_CREDENTIALS": "❌ Invalid email or password.",
+                            "EMAIL_NOT_FOUND": "❌ No account found with this email.",
+                            "INVALID_PASSWORD": "❌ Incorrect password.",
+                            "USER_DISABLED": "❌ This account has been disabled.",
+                            "TOO_MANY_ATTEMPTS_TRY_LATER": "❌ Too many attempts. Try again later.",
+                        }
+                        st.error(error_messages.get(error, f"❌ Login failed: {error}"))
 
-# --- REMAINDER OF YOUR EXISTING CODE ---
-# [Insert your init_connection, load_data, and all tab logic starting from here]
+    st.stop()
 
 st.sidebar.markdown(f"👤 **{st.session_state.get('user_email', '')}**")
 if st.sidebar.button("🚪 Logout"):
