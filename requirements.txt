@@ -1,9 +1,8 @@
-streamlit==1.36.0
+streamlit
 pandas
 plotly
 gspread
 google-auth
-pyrebase4
 PyYAML
 requests
 openpyxl
