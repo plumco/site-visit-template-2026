@@ -10,3 +10,4 @@ reportlab
 folium
 streamlit-folium
 geopy
+firebase-admin
