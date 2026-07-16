@@ -302,7 +302,7 @@ if not st.session_state["authenticated"]:
     </style>
     """, unsafe_allow_html=True)
 
-    st.markdown('<div class="login-header"><h1>🔐 Site Visit Analytics</h1><p>Please sign in to access the dashboard</p></div>', unsafe_allow_html=True)
+    st.markdown('<div class="login-header"><h1>🔐 Site Visit Management System </h1><p>Please sign in to access the dashboard</p></div>', unsafe_allow_html=True)
 
     col_left, col_center, col_right = st.columns([1, 1.5, 1])
     with col_center:
