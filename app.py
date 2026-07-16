@@ -41,7 +41,7 @@ pio.templates["liquid_glass"] = _glass_template
 px.defaults.template = "liquid_glass"
 
 # --- 1. Page Config & CSS ---
-st.set_page_config(layout="wide", page_title="Site Visit Deep Analytics", page_icon="📊")
+st.set_page_config(layout="wide", page_title="Site Visit Management System", page_icon="📊")
 
 st.markdown("""
 <style>
